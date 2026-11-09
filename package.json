@@ -1,0 +1,12 @@
+{
+  "name": "ints-drive-to-survive",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A Korean browser-based vehicle dynamics learning lab for sim racing, rally and drift fundamentals.",
+  "scripts": {
+    "start": "node preview.cjs",
+    "test": "node verify.cjs",
+    "build:offline": "node bundle.cjs"
+  },
+  "engines": {"node": ">=18"}
+}
