@@ -14,6 +14,8 @@
   let lastTime = 0, sampleTime = 0, uiTime = 0, toastTimer, storageFailed = false;
   let initialLoads;
   let activeMission=null, observe=false, academy=null, fullTrace=[], reviewTime=null, diagnostic=null;
+  let replayPlaying=false, replayRate=.25, replayWindow=null, referenceRun=null, replayFocusTime=null, replayFocusNote='';
+  const referenceCache=new Map();
   try { const saved = JSON.parse(localStorage.getItem(storageKey) || '[]'); if (Array.isArray(saved)) history = saved.filter(validRecord).slice(-150); } catch (_) { storageFailed = true; }
 
   function validRecord(r) {
@@ -60,9 +62,10 @@
     running=false;done=false;clearInputs();scene=activeMission?GripTraining.scene(activeMission.id):makeScene($('preset').value);
     state=GripPhysics.create({vehicle:$('vehicle').value||'gt3',speed:Number($('start-speed').value)/3.6,surface:$('surface').value,aids:$('aids').value||'default'});
     state.x=scene.points[0].x;state.y=scene.points[0].y;state.heading=scene.startHeading||0;
-    follow=scene.total>700;
+    follow=scene.total>700||activeMission?.category==='circuit';
     initialLoads={fl:state.staticNf?state.staticNf/2:state.loadFL,fr:state.staticNf?state.staticNf/2:state.loadFR,rl:state.staticNr?state.staticNr/2:state.loadRL,rr:state.staticNr?state.staticNr/2:state.loadRR};
-    samples=[];trail=[];fullTrace=[];reviewTime=null;diagnostic=null;sampleTime=0;$('sim-page').classList.remove('reviewing');
+    samples=[];trail=[];fullTrace=[];reviewTime=null;diagnostic=null;sampleTime=0;replayPlaying=false;replayWindow=null;referenceRun=null;replayFocusTime=null;replayFocusNote='';$('sim-page').classList.remove('reviewing');
+    $('board-note').hidden=!scene.brakingBoards?.length;$('board-note').textContent=scene.brakingBoardNote||'숫자 거리판은 회전 기준선까지의 모델 거리(m)입니다. 실제 서킷의 제동 지점은 아닙니다.';
     run={config:config(),progress:0,travelDistance:0,lastPosition:{x:state.x,y:state.y},offTime:0,maxOff:0,frontTime:0,rearTime:0,spinTime:0,maxBeta:0,entrySpeed:null,minSpeed:Infinity,exitSpeed:null,gates:[null,null],stopDistance:null,paused:false};
     run.trainingMetrics={brakeTime:0,brakeAtEntry:null,overlapTime:0,turnBrakeTime:0,progress:0,travelDistance:0,peakSpeed:state.speed*3.6,headingTurnDeg:0};run.lastHeading=state.heading;run.traceAt=-1;
     $('start-hint').hidden=false;$('play').textContent='▶ 시작';$('run-status').textContent='준비됨';$('scene-tag').textContent=scene.name;
@@ -211,37 +214,97 @@
   function showMissionResult(r){
     const verdict=GripTraining.evaluate(activeMission.id,r);$('results').hidden=false;
     if(!observe){try{let p=JSON.parse(localStorage.getItem('intsTrainingProgressV1')||'{}');if(!p||Array.isArray(p)||typeof p!=='object')p={};p[activeMission.id]={passed:verdict.passed,mode:'drive',at:r.at,time:r.time};localStorage.setItem('intsTrainingProgressV1',JSON.stringify(p));academy?.refresh();}catch(_){toast('연습 결과를 저장하지 못했습니다. 이번 결과는 아래에서 확인할 수 있어요.');}}
-    $('results').innerHTML='<div class="results-head"><div><p class="eyebrow">'+(observe?'자동 조작 예시 / 내 점수 아님':'이번 연습 결과')+'</p><h2>'+esc(verdict.headline)+'</h2><p>'+esc(verdict.observation)+'</p></div><span class="tag">'+(observe?'관찰 완료':verdict.passed?'이번 목표 달성':'다시 시도')+'</span></div><div class="mission-checks">'+verdict.checks.map(c=>'<div class="'+(c.pass?'check-pass':'check-retry')+'"><b>'+(c.pass?'✓':'○')+' '+esc(c.label)+'</b><span>'+esc(c.value??'')+'</span></div>').join('')+'</div><div class="next-experiment"><b>다음 시도에서 바꿀 한 가지</b><p>'+esc(missionText(verdict.nextAction))+'</p></div><div class="mission-actions"><button class="btn primary" id="retry-mission">'+(observe?'직접 해보기':'↺ 같은 조건으로 다시')+'</button>'+(verdict.passed&&verdict.nextId&&!observe?'<button class="btn" id="next-mission">다음 연습 →</button>':'')+'<button class="btn subtle" id="result-home">연습 목록</button></div>';
+    $('results').innerHTML='<div class="results-head"><div><p class="eyebrow">'+(observe?'자동 조작 예시 / 내 점수 아님':'이번 연습 결과')+'</p><h2>'+esc(verdict.headline)+'</h2><p>'+esc(verdict.observation)+'</p></div><span class="tag">'+(observe?'관찰 완료':verdict.passed?'이번 목표 달성':'다시 시도')+'</span></div><details class="evidence-details"><summary>목표 조건별 결과 보기</summary><div class="mission-checks">'+verdict.checks.map(c=>'<div class="'+(c.pass?'check-pass':'check-retry')+'"><b>'+(c.pass?'✓':'○')+' '+esc(c.label)+'</b><span>'+esc(c.value??'')+'</span></div>').join('')+'</div></details><div class="next-experiment"><b>다음 시도에서 바꿀 한 가지</b><p>'+esc(missionText(verdict.nextAction))+'</p></div><div class="mission-actions"><button class="btn primary" id="retry-mission">'+(observe?'직접 해보기':'↺ 같은 조건으로 다시')+'</button>'+(verdict.passed&&verdict.nextId&&!observe?'<button class="btn" id="next-mission">다음 연습 →</button>':'')+'<button class="btn subtle" id="result-home">연습 목록</button></div>';
     $('retry-mission').onclick=()=>{startMission(activeMission.id,false);play();};if($('next-mission'))$('next-mission').onclick=()=>startMission(verdict.nextId);$('result-home').onclick=()=>navigate('home');
     appendDebrief(r);
   }
   function appendDebrief(record){
     if(!globalThis.GripDebrief)return;
     diagnostic=GripDebrief.analyze({record,trace:fullTrace,scene,mission:activeMission});
+    const objectiveTime=objectiveFocus(record);replayFocusTime=objectiveTime??diagnostic.focusTime;replayFocusNote=objectiveTime!==null?'완주했지만 목표 조건을 놓친 구간으로 이동했습니다. 제동 해제·진입·탈출 기록을 확인하세요.':'';
     const d=diagnostic,confidence={observed:'관측된 사실',likely:'가능성 있는 원인 · 추정',unknown:'원인을 좁힐 기록이 부족함'};
-    const panel=document.createElement('section');panel.className='debrief-panel';panel.innerHTML='<p class="eyebrow">WHY / 실패 직전부터 읽기</p><h3>'+esc(d.headline)+'</h3><span class="tag">'+esc(confidence[d.certainty]||confidence.unknown)+'</span><p>'+esc(d.explanation)+'</p><ol class="event-timeline">'+(d.events||[]).map(e=>'<li><b>'+fmt(e.t)+' s · '+esc(e.label)+'</b><span>'+esc(e.detail)+'</span></li>').join('')+'</ol><p class="next-experiment"><b>한 가지 실험</b> '+esc(d.nextAction)+'</p>'+(fullTrace.length?'<div class="review-heading"><h3>어떤 입력 뒤에 반응이 나왔나</h3><span class="tag">이번 주행 · 탭에서만 보관</span></div><canvas id="review-chart" aria-label="선택한 시점 전후의 브레이크, 가속, 조향, 속도 그래프"></canvas><label for="review-time">기록 시점 <output id="review-readout"></output></label><input type="range" id="review-time" min="0" max="'+record.time+'" step="0.05" value="'+clamp(d.focusTime||0,0,record.time)+'"><p class="fineprint">슬라이더를 움직이면 위 코스의 기록 위치와 아래 수치가 바뀝니다. 빨강 제동 · 연두 가속 · 민트 조향 크기 · 회색 속도. 물리를 다시 계산하는 영상 재생은 아닙니다.</p><div id="review-values" class="review-values"></div><button class="btn subtle" id="review-focus">실패·관찰 시점으로</button>':'');
+    referenceRun=null;replayPlaying=false;replayRate=.25;
+    if(activeMission&&!observe&&globalThis.GripReplay){
+      const key=JSON.stringify([activeMission.id,scene.total,record.config.vehicle,record.config.surface,record.config.drive,record.config.aids,record.config.startSpeed]);
+      if(!referenceCache.has(key)){const generated=GripReplay.generate(scene,activeMission,record.config);if(referenceCache.size>=3)referenceCache.delete(referenceCache.keys().next().value);referenceCache.set(key,generated);}
+      const candidate=referenceCache.get(key);if(candidate?.complete)referenceRun=candidate;
+    }
+    const panel=document.createElement('section');panel.className='debrief-panel';panel.innerHTML='<p class="eyebrow">WHY / 실패 직전부터 읽기</p><h3>'+esc(d.headline)+'</h3><span class="tag">'+esc(confidence[d.certainty]||confidence.unknown)+'</span><p>'+esc(d.explanation)+'</p>'+(fullTrace.length?replayMarkup():'')+'<details class="evidence-details"><summary>실패 전후의 관측 근거</summary><ol class="event-timeline">'+(d.events||[]).map(e=>'<li><b>'+fmt(e.t)+' s · '+esc(e.label)+'</b><span>'+esc(e.detail)+'</span></li>').join('')+'</ol></details><p class="next-experiment"><b>다음 시도에서 한 가지</b> '+esc(d.nextAction)+'</p>';
     $('results').appendChild(panel);
-    if(fullTrace.length){$('review-time').oninput=()=>{reviewTime=Number($('review-time').value);renderReview();};$('review-focus').onclick=()=>{reviewTime=d.focusTime||0;$('review-time').value=reviewTime;renderReview();$('track').scrollIntoView({block:'center',behavior:'smooth'});};reviewTime=d.focusTime||0;renderReview();}
+    if(fullTrace.length){
+      setReplayWindow('focus');
+      $('review-time').oninput=()=>{replayPlaying=false;reviewTime=clamp(Number($('review-time').value),replayWindow.from,replayWindow.to);renderReview();};
+      $('review-play').onclick=()=>{if(reviewTime>=replayWindow.to-.001)reviewTime=replayWindow.from;replayPlaying=!replayPlaying;renderReview();};
+      $('review-speed').onchange=()=>{const v=Number($('review-speed').value);replayRate=[.25,.5,1].includes(v)?v:.25;};
+      $('review-back').onclick=()=>{replayPlaying=false;reviewTime=clamp(reviewTime-.1,replayWindow.from,replayWindow.to);renderReview();};
+      $('review-forward').onclick=()=>{replayPlaying=false;reviewTime=clamp(reviewTime+.1,replayWindow.from,replayWindow.to);renderReview();};
+      $('review-focus').onclick=()=>{setReplayWindow('focus');renderReview();};$('review-all').onclick=()=>{setReplayWindow('all');renderReview();};
+      const focusSample=reviewSample(replayFocusTime??fullTrace[0].t);
+      for(const type of ['brake_start','brake_release','turn_direction']){
+        const candidates=(referenceRun?.events||[]).filter(e=>e.type===type&&Number.isFinite(e.s)&&e.s>=fullTrace[0].s&&e.s<=fullTrace.at(-1).s);
+        const directed=type==='turn_direction'?candidates.filter(e=>e.direction!==0):candidates;
+        const event=(directed.length?directed:candidates).sort((a,b)=>Math.abs(a.s-focusSample.s)-Math.abs(b.s-focusSample.s))[0];
+        const button=$('jump-'+type),matched=event?GripReplay.atDistance(fullTrace,event.s):null;
+        button.disabled=!matched;button.textContent=(type==='turn_direction'&&event?'시범 '+event.label:({brake_start:'시범 제동 시작',brake_release:'시범 브레이크 해제',turn_direction:'시범 조향 변화'})[type])+(event?' · '+Math.round(event.s)+' m':'');
+        button.onclick=()=>{if(!matched)return;replayPlaying=false;replayWindow=GripReplay.failureWindow(fullTrace,matched.t,2,3);reviewTime=matched.t;syncReviewRange();renderReview();};
+      }
+      renderReview();
+    }
+  }
+  function objectiveFocus(record){
+    if(!activeMission||record.reason!=='finish'||record.offTime>0||!globalThis.GripReplay)return null;
+    const m=activeMission,tm=record.trainingMetrics||{},range=m.entrySpeedRange;
+    const entryMiss=range&&Number.isFinite(record.entrySpeed)&&(record.entrySpeed<range[0]||record.entrySpeed>range[1]);
+    const releaseMiss=Number.isFinite(m.releaseBrakeLimit)&&Number.isFinite(tm.brakeAtEntry)&&tm.brakeAtEntry>m.releaseBrakeLimit;
+    if((entryMiss||releaseMiss)&&scene.gates)return GripReplay.atDistance(fullTrace,scene.gates.entry)?.t??null;
+    if(m.id==='monza_lesmo'){
+      if(tm.overlapTime>.4)return fullTrace.find(s=>s.brake>.1&&s.throttle>.1)?.t??null;
+      if(Number.isFinite(record.exitSpeed)&&Number.isFinite(record.entrySpeed)&&record.exitSpeed<=record.entrySpeed)return GripReplay.atDistance(fullTrace,scene.gates.exit)?.t??null;
+    }
+    if(m.id==='drift_circle_intro')return fullTrace.find(s=>s.speed>40||Math.abs(s.beta)>15)?.t??null;
+    return null;
+  }
+  function replayMarkup(){
+    return (replayFocusNote?'<p class="replay-action">'+esc(replayFocusNote)+'</p>':'')+'<section id="review-panel" class="replay-panel" aria-label="슬로모션과 시범 비교"><div class="review-heading"><h3>실패한 순간, 천천히 다시 보기</h3><span class="tag">기록 재생 · 실제 조작에는 영향 없음</span></div><p class="replay-align">'+(referenceRun?'내 기록의 시간으로 재생하고, 시범은 <b>같은 코스 위치</b>에 맞춥니다. 두 차량의 속도와 입력 차이를 보세요.':observe?'자동 시범의 기록입니다. 직접 주행한 뒤 내 입력과 시범을 비교할 수 있습니다.':'이번 주행을 다시 봅니다. 시범 비교는 첫 화면의 안내 연습에서 제공합니다.')+'</p><div class="replay-toolbar"><button id="review-play" class="btn primary">▶ 슬로모션 재생</button><label>재생 속도 <select id="review-speed"><option value="0.25" selected>0.25×</option><option value="0.5">0.5×</option><option value="1">1×</option></select></label><label class="small-toggle"><input id="review-loop" type="checkbox" checked> 구간 반복</label><button class="btn subtle" id="review-back" aria-label="기록 0.1초 이전">−0.1초</button><button class="btn subtle" id="review-forward" aria-label="기록 0.1초 이후">+0.1초</button></div><div class="replay-window"><button class="btn subtle" id="review-focus">실패·관찰 전후</button><button class="btn subtle" id="review-all">이번 주행 전체</button><span id="review-window-label"></span></div><label for="review-time" class="replay-time-label">내 기록 시점 <output id="review-readout"></output></label><input type="range" id="review-time" min="0" max="1" step="0.01" value="0"><div class="replay-pair '+(!referenceRun?'single':'')+'"><article class="replay-car"><h4>내 주행 <span id="replay-player-speed"></span></h4><canvas id="replay-player" aria-label="내 주행 슬로모션"></canvas><div id="replay-player-inputs" class="replay-inputs"></div></article><article class="replay-car reference" '+(!referenceRun?'hidden':'')+'><h4>시범 · 같은 위치 <span id="replay-reference-speed"></span></h4><canvas id="replay-reference" aria-label="같은 코스 위치의 시범 주행"></canvas><div id="replay-reference-inputs" class="replay-inputs"></div><p id="replay-reference-status" class="fineprint"></p></article></div><div class="replay-advice" id="replay-advice"></div><div class="replay-events" '+(!referenceRun?'hidden':'')+'><span>바로 찾아보기</span><button class="btn subtle" id="jump-brake_start"></button><button class="btn subtle" id="jump-brake_release"></button><button class="btn subtle" id="jump-turn_direction"></button></div><div '+(!referenceRun?'hidden':'')+'><p class="fineprint">실선: 내 입력 · 점선: 시범 · 조향 + 왼쪽 / − 오른쪽 · 가로축: 코스 거리</p><canvas id="review-comparison" aria-label="같은 코스 거리에서 내 입력과 시범의 제동과 조향 비교"></canvas></div><details class="evidence-details"><summary>내 속도·입력 수치 보기</summary><canvas id="review-chart" aria-label="내 주행의 시간별 입력 그래프"></canvas><div id="review-values" class="review-values"></div></details><p class="fineprint">기록 사이를 보간해 재생합니다. 시범은 같은 차량·노면·시작 속도의 교육용 조작 예시이며, 최적 랩이나 실제 게임의 정답 입력이 아닙니다. 이탈 중에는 코스상 진행 위치가 실제 이동 거리와 다를 수 있습니다. 상세 재생은 이번 탭의 마지막 시도에서만 유지됩니다.</p></section>';
+  }
+  function reviewSample(t){return globalThis.GripReplay?.atTime(fullTrace,clamp(t,fullTrace[0].t,fullTrace.at(-1).t))||fullTrace.reduce((a,b)=>Math.abs(b.t-t)<Math.abs(a.t-t)?b:a);}
+  function asState(sample){return {...state,...sample,time:sample.t,speed:sample.speed/3.6,beta:sample.beta/rad,steer:sample.wheelSteer};}
+  function setReplayWindow(mode){
+    replayPlaying=false;const first=fullTrace[0].t,last=fullTrace.at(-1).t;
+    replayWindow=mode==='all'?{from:first,to:last,focus:replayFocusTime??first}:globalThis.GripReplay?.failureWindow(fullTrace,replayFocusTime??last,4,2)||{from:first,to:last};reviewTime=replayWindow.from;syncReviewRange();
+  }
+  function syncReviewRange(){if(!$('review-time')||!replayWindow)return;$('review-time').min=replayWindow.from;$('review-time').max=replayWindow.to;$('review-time').value=reviewTime;$('review-window-label').textContent=fmt(replayWindow.from)+'–'+fmt(replayWindow.to)+' s';}
+  function inputVisual(sample){
+    if(!sample)return '<p>이 위치의 시범 기록이 없습니다.</p>';
+    const direction=Math.abs(sample.steer)<.02?'중립':sample.steer>0?'← 왼쪽':'오른쪽 →';
+    return '<div class="replay-pedals"><div><span>브레이크 <b>'+Math.round(sample.brake*100)+'%</b></span><i><em style="width:'+clamp(sample.brake*100,0,100)+'%"></em></i></div><div class="gas"><span>가속 <b>'+Math.round(sample.throttle*100)+'%</b></span><i><em style="width:'+clamp(sample.throttle*100,0,100)+'%"></em></i></div></div><div class="replay-steer"><span class="steer-wheel" style="transform:rotate('+(-sample.steer*120)+'deg)" aria-hidden="true">⊕</span><div><b>'+direction+' '+Math.round(Math.abs(sample.steer)*100)+'%</b><small>조향 입력 · 앞바퀴 '+(Math.abs(sample.wheelSteer)*rad).toFixed(1)+'°</small></div></div>';
+  }
+  function drawReplayVehicles(sample,reference){
+    if(!$('replay-player'))return;const view=asState(sample);
+    GripRenderer.track($('replay-player'),view,scene,{follow:true,cameraState:view,progress:sample.s,trail:fullTrace.filter(p=>p.t<=sample.t&&p.t>=sample.t-4),path:true,review:sample,reviewLabel:'내 기록'});
+    if(reference)GripRenderer.track($('replay-reference'),asState(reference),scene,{follow:true,cameraState:view,progress:sample.s,trail:referenceRun.trace.filter(p=>p.s<=sample.s&&p.s>=sample.s-60),path:true,review:reference,reviewLabel:'같은 위치의 시범',vehicleColor:'#6dd6eb'});
   }
   function renderReview(){
     $('sim-page').classList.toggle('reviewing',done&&reviewTime!==null);
     if(reviewTime===null||!fullTrace.length||!$('review-chart'))return;
-    const sample=fullTrace.reduce((a,b)=>Math.abs(b.t-reviewTime)<Math.abs(a.t-reviewTime)?b:a);
+    const sample=reviewSample(reviewTime),reference=referenceRun?GripReplay.atDistance(referenceRun.trace,sample.s):null;
     $('review-readout').textContent=sample.t.toFixed(2)+' s';$('review-values').innerHTML=[['속도',sample.speed.toFixed(1)+' km/h'],['브레이크',Math.round(sample.brake*100)+'%'],['가속',Math.round(sample.throttle*100)+'%'],['조향',Math.round(Math.abs(sample.steer)*100)+'% '+(Math.abs(sample.steer)<.005?'중립':sample.steer>0?'왼쪽':'오른쪽')],['앞축 요구',Math.round(sample.utilF*100)+'%'],['차체 슬립각',sample.beta.toFixed(1)+'°']].map(([k,v])=>'<div><span>'+k+'</span><b>'+v+'</b></div>').join('');
+    $('review-time').value=reviewTime;$('review-play').textContent=replayPlaying?'Ⅱ 재생 일시정지':'▶ 슬로모션 재생';
+    $('replay-player-speed').textContent=sample.speed.toFixed(1)+' km/h';$('replay-player-inputs').innerHTML=inputVisual(sample);
+    drawReplayVehicles(sample,reference);
+    if(referenceRun){
+      $('replay-reference').hidden=!reference;
+      $('replay-reference-speed').textContent=reference?reference.speed.toFixed(1)+' km/h':'—';$('replay-reference-inputs').innerHTML=inputVisual(reference);$('replay-reference-status').textContent=reference?'코스 '+sample.s.toFixed(1)+' m · 시범 자체 시간 '+reference.t.toFixed(2)+' s':'시범이 도달하지 않은 위치입니다.';
+      const compared=GripReplay.compare(sample,reference,referenceRun.events);
+      $('replay-advice').innerHTML='<b>'+esc(compared.headline)+'</b><p>'+esc(compared.explanation)+'</p><p class="replay-action">'+esc(compared.nextAction)+'</p>';
+      const from=reviewSample(replayWindow.from).s,to=reviewSample(replayWindow.to).s;
+      GripRenderer.comparison?.($('review-comparison'),fullTrace,referenceRun.trace,{progress:sample.s,fromS:Math.max(0,from-10),toS:Math.max(from+30,to+10)});
+    }else $('replay-advice').textContent=diagnostic?.nextAction||'입력과 차의 반응이 이어지는 순서를 보세요.';
     const to=sample.t+2,from=Math.max(0,to-12),data=fullTrace.filter(s=>s.t>=from&&s.t<=to).map(s=>({...s,speed:s.speed/3.6}));
     GripRenderer.trace($('review-chart'),data,{cursor:sample.t});
   }
-  function pointOnScene(distance){
-    const points=scene.points;for(let i=1;i<points.length;i++){const b=points[i],a=points[i-1];if(b.s>=distance){const f=clamp((distance-a.s)/(b.s-a.s),0,1);return{x:a.x+(b.x-a.x)*f,y:a.y+(b.y-a.y)*f,heading:Math.atan2(b.y-a.y,b.x-a.x)};}}const b=points.at(-1),a=points.at(-2);return{...b,heading:Math.atan2(b.y-a.y,b.x-a.x)};
-  }
   function observeStep(dt){
-    if(activeMission?.id==='intro_brake'){controls={steer:0,throttle:0,brake:state.time>.9?.65:0,handbrake:0,clutch:0};return;}
-    const look=clamp(state.speed*.6+4,6,22),target=pointOnScene(run.progress+look),angle=Math.atan2(Math.sin(Math.atan2(target.y-state.y,target.x-state.x)-state.heading),Math.cos(Math.atan2(target.y-state.y,target.x-state.x)-state.heading));
-    const steer=clamp(Math.atan(2*state.params.wheelbase*Math.sin(angle)/look)/state.params.steeringLimit,-.9,.9);
-    let speed=(activeMission?.demoSpeedKph||45)/3.6;
-    // Look ahead for curvature and brake early; this is an illustrative controller, not a hotlap reference.
-    for(let ahead=0;ahead<=65;ahead+=5){const a=pointOnScene(run.progress+ahead),b=pointOnScene(run.progress+ahead+8),curvature=Math.abs(Math.atan2(Math.sin(b.heading-a.heading),Math.cos(b.heading-a.heading)))/8,limit=Math.sqrt((scene.preset==='rally_hairpin'?1.8:3.4)/Math.max(curvature,.001));speed=Math.min(speed,Math.sqrt(limit*limit+2*2.5*Math.max(0,ahead-8)));}
-    const error=speed-state.speed;controls={steer:controls.steer+clamp(steer-controls.steer,-dt*2,dt*2),throttle:error>0?clamp(error*.3+.05,0,.6):0,brake:error<-.15?clamp(-error*.16,0,.7):0,handbrake:0,clutch:0};
+    controls=GripReplay.controls(state,scene,activeMission,run.progress,controls,dt);
   }
   function updateControlsUI(){
     $('steer-range').value=-controls.steer;$('throttle-range').value=controls.throttle;$('brake-range').value=controls.brake;
@@ -253,7 +316,7 @@
     $('phase').textContent=scene.preset==='corner'?(run.progress<45?'진입':run.progress<110?'회전':'탈출'):scene.preset==='brake'?'제동 실험':scene.total>700?Math.round(run.progress)+' / '+Math.round(scene.total)+' m':scene.preset==='slalom'?'방향 전환':'거동 관찰';
     $('downforce').textContent=Math.round(view.downforce||0)+' N';$('g-force').textContent=(Math.abs(view.ay||0)/9.81).toFixed(2)+' g / '+(view.tcActive?'개입 중':'—');
     for(const [id,val] of [['front-use',view.utilF],['rear-use',view.utilR]]){const el=$(id);el.textContent=Math.round(Math.min(val,9.99)*100)+'%';el.style.color=val>1?'var(--coral)':'var(--text)';}
-    for(const part of ['fl','fr','rl','rr']){const val=state['load'+part.toUpperCase()]/initialLoads[part],el=$('load-'+part);el.querySelector('b').textContent=Math.round(val*100)+'%';el.querySelector('i').style.width=clamp(val*50,0,100)+'%';el.querySelector('i').style.background=val>1.1?'var(--lime)':'var(--cyan)';}
+    for(const part of ['fl','fr','rl','rr']){const val=view['load'+part.toUpperCase()]/initialLoads[part],el=$('load-'+part);el.querySelector('b').textContent=Math.round(val*100)+'%';el.querySelector('i').style.width=clamp(val*50,0,100)+'%';el.querySelector('i').style.background=val>1.1?'var(--lime)':'var(--cyan)';}
     $('beta').innerHTML=(view.beta*rad).toFixed(1)+'<small>°</small>';$('yaw').innerHTML=(view.yawRate*rad).toFixed(1)+'<small>°/s</small>';$('alpha-f').textContent=(view.alphaF*rad).toFixed(1)+'°';$('alpha-r').textContent=(view.alphaR*rad).toFixed(1)+'°';
     let title='입력 하나만 바꿔서 비교하세요.',body='조향을 일정하게 두고 브레이크나 가속을 바꿔 보면, 속도와 앞뒤 타이어 요구량의 관계를 읽기 쉽습니다.',action='실험 → 같은 조건에서 한 변수만 바꾸기';
     if(view.time<.2){title='먼저, 직진하며 제동해 보세요.';body='앞쪽 하중이 늘어도 제동에 접지를 쓰고 있다면, 동시에 요구할 수 있는 회전력에는 한계가 있습니다.';action='실험 → 같은 속도에서 제동량만 바꿔 보기';}
@@ -276,6 +339,7 @@
     let armed=false;$('clear-history').onclick=()=>{if(!armed){armed=true;$('clear-history').textContent='한 번 더 눌러 전체 삭제';return;}history=[];attempts=[];$('attempt-count').textContent='0';saveHistory();renderHistory();};
   }
   function navigate(next){
+    replayPlaying=false;
     if(!['home','lab','practice','learn','guide','transfer','history'].includes(next))next='home';
     const switchingSimulator=['lab','practice'].includes(next)&&simPage!==next;
     if(running){running=false;run.paused=true;clearInputs();$('play').textContent='▶ 계속';$('run-status').textContent='일시정지';$('run-dot').style.background='var(--muted)';}
@@ -319,7 +383,7 @@
   const driveKeys=['KeyW','KeyA','KeyS','KeyD','KeyE','KeyQ','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space','KeyR'];
   document.addEventListener('keydown',e=>{if(!['lab','practice'].includes(page)||$('model-dialog').open||!driveKeys.includes(e.code)||['SELECT','INPUT','TEXTAREA'].includes(e.target.tagName)||e.target.isContentEditable||((e.code==='Space')&&e.target.tagName==='BUTTON'))return;e.preventDefault();if(e.code==='Space'){if(!e.repeat)play();}else if(e.code==='KeyR'){if(!e.repeat)$('reset').click();}else if(inputMode==='keyboard')keys.add(e.code);});
   document.addEventListener('keyup',e=>keys.delete(e.code));
-  const pauseHidden=()=>{clearInputs();if(running){running=false;run.paused=true;$('play').textContent='▶ 계속';$('run-status').textContent='일시정지';$('run-dot').style.background='var(--muted)';}};
+  const pauseHidden=()=>{replayPlaying=false;clearInputs();if(running){running=false;run.paused=true;$('play').textContent='▶ 계속';$('run-status').textContent='일시정지';$('run-dot').style.background='var(--muted)';}};
   window.addEventListener('blur',pauseHidden);document.addEventListener('visibilitychange',()=>{if(document.hidden)pauseHidden();});
   window.addEventListener('hashchange',()=>navigate(location.hash.slice(1)));
   $('export').onclick=()=>{if(!history.length){toast('완료한 주행이 없습니다.');return;}const cols=['date','preset','mission','mode','vehicle','aids','model_version','surface','drive','start_kmh','input','timescale','paused','valid','reason','total_s','entry_s','rotation_s','exit_s','offtrack_s','front_over_demand_pct','max_body_slip_deg','stop_m'];const rows=history.map(r=>[r.at,r.config.preset,r.config.missionId||'',r.config.mode||'drive',r.config.vehicle,r.config.aids,r.config.modelVersion,r.config.surface,r.config.drive,r.config.startSpeed,r.config.input,r.config.timeScale,r.paused,r.valid,r.reason,r.time,...r.sectors,r.offTime,r.frontPct,r.maxBeta,r.stopDistance]);const csv='\ufeff'+[cols,...rows].map(row=>row.map(v=>'"'+String(v??'').replaceAll('"','""')+'"').join(',')).join('\r\n');const url=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8;'}));const a=document.createElement('a');a.href=url;a.download='grip-lab-runs.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
@@ -331,10 +395,14 @@
   reset();setInput('keyboard');navigate(location.hash.slice(1)||'home');
   function frame(now){
     const dt=lastTime?Math.min((now-lastTime)/1000,.05):0;lastTime=now;
-    if(running){if(observe)observeStep(dt);else inputStep(dt);const simDt=dt*Number($('time-scale').value);GripPhysics.step(state,controls,simDt,{surface:$('surface').value,drive:$('drive').value,aids:$('aids').value});measure(simDt);if(state.time-sampleTime>=.04){sampleTime=state.time;samples.push({t:state.time,...controls,speed:state.speed});while(samples.length&&samples[0].t<state.time-12)samples.shift();trail.push({x:state.x,y:state.y});if(trail.length>1500)trail.shift();}}
-    const review=done&&reviewTime!==null&&fullTrace.length?fullTrace.reduce((a,b)=>Math.abs(b.t-reviewTime)<Math.abs(a.t-reviewTime)?b:a):null;const view=review?{...state,...review,time:review.t,speed:review.speed/3.6,beta:review.beta/rad,steer:review.wheelSteer}:state;
+    if(running){const simDt=dt*Number($('time-scale').value);if(observe)observeStep(simDt);else inputStep(dt);GripPhysics.step(state,controls,simDt,{surface:$('surface').value,drive:$('drive').value,aids:$('aids').value});measure(simDt);if(state.time-sampleTime>=.04){sampleTime=state.time;samples.push({t:state.time,...controls,speed:state.speed});while(samples.length&&samples[0].t<state.time-12)samples.shift();trail.push({x:state.x,y:state.y});if(trail.length>1500)trail.shift();}}
+    if(done&&replayPlaying&&replayWindow&&['lab','practice'].includes(page)){
+      reviewTime+=dt*replayRate;
+      if(reviewTime>=replayWindow.to){const span=replayWindow.to-replayWindow.from;if($('review-loop').checked&&span>.01)reviewTime=replayWindow.from+(reviewTime-replayWindow.from)%span;else{reviewTime=replayWindow.to;replayPlaying=false;}}
+    }
+    const review=done&&reviewTime!==null&&fullTrace.length?reviewSample(reviewTime):null;const view=review?asState(review):state;
     if(now-uiTime>75){uiTime=now;updateTelemetry(view);}
-    if(['lab','practice'].includes(page)){GripRenderer.track($('track'),view,scene,{follow,path:$('show-path').checked,trail,progress:review?.s??run.progress,review});GripRenderer.grip($('grip'),view);GripRenderer.trace($('trace'),samples);if(done&&now-uiTime<16)renderReview();}
+    if(['lab','practice'].includes(page)){GripRenderer.track($('track'),view,scene,{follow,path:$('show-path').checked,trail,progress:review?.s??run.progress,review});GripRenderer.grip($('grip'),view);GripRenderer.trace($('trace'),samples);if(done&&review){drawReplayVehicles(review,referenceRun?GripReplay.atDistance(referenceRun.trace,review.s):null);if(now-uiTime<16)renderReview();}}
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);

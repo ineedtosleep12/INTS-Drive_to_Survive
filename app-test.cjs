@@ -192,5 +192,32 @@ assert(failure.records()[0].offTime>0);assert.equal(JSON.parse(failure.storage.g
 failure.el('review-time').value='2';failure.el('review-time').oninput();failure.tick();assert(failure.sim.renderOptions.review);assert.equal(failure.sim.renderOptions.review.wheelSteer,0);assert(failure.el('review-values').innerHTML.includes('중립'));
 failure.el('reset').click();assert.equal(failure.el('results').hidden,true,'old analysis must disappear before a new trace starts');failure.tick();assert.equal(failure.sim.renderOptions.review,null);
 failure.input('mouse');assert(failure.el('mission-cue').textContent.includes('패드'));failure.input('gamepad');assert(failure.el('mission-cue').textContent.includes('LT'));
+// Playback changes only the review cursor. Slow speed, stepping, looping,
+// distance-event jumps, tab/blur pause, and retry must not drive or score again.
+const replay=harness([],{modules:true,dynamics:true,fast:true});replay.sim.academy.onStart('monza_t1');replay.el('play').click();
+for(let i=0;i<4000&&replay.el('results').hidden;i++)replay.tick();
+assert(replay.records()[0].offTime>0);assert(replay.el('replay-reference-status').textContent.includes('시범 자체 시간'));
+const count=replay.records().length,liveTime=replay.sim.last.time,liveX=replay.sim.last.x,calls=replay.sim.calls.length,score=replay.storage.get('intsTrainingProgressV1');
+const beforeCursor=Number(replay.el('review-time').value);replay.el('review-play').click();for(let i=0;i<20;i++)replay.tick();replay.el('review-play').click();
+assert(Math.abs(Number(replay.el('review-time').value)-beforeCursor-.25)<1e-7,'0.25x playback advances .25 simulation seconds per real second');
+assert.equal(replay.sim.calls.length,calls);assert.equal(replay.sim.last.time,liveTime);assert.equal(replay.sim.last.x,liveX);assert.equal(replay.records().length,count);assert.equal(replay.storage.get('intsTrainingProgressV1'),score);
+const paused=Number(replay.el('review-time').value);for(let i=0;i<5;i++)replay.tick();assert.equal(Number(replay.el('review-time').value),paused);
+replay.el('review-forward').click();assert(Math.abs(Number(replay.el('review-time').value)-paused-.1)<1e-7);replay.el('review-back').click();assert(Math.abs(Number(replay.el('review-time').value)-paused)<1e-7);
+replay.change('review-speed','0.5');replay.el('review-play').click();for(let i=0;i<20;i++)replay.tick();replay.el('review-play').click();assert(Math.abs(Number(replay.el('review-time').value)-paused-.5)<1e-7);
+replay.el('review-play').click();replay.fireWindow('blur');const blurred=Number(replay.el('review-time').value);replay.tick();assert.equal(Number(replay.el('review-time').value),blurred);
+replay.change('review-speed','1');replay.el('review-play').click();for(let i=0;i<20;i++)replay.tick();replay.el('review-play').click();assert(Math.abs(Number(replay.el('review-time').value)-blurred-1)<1e-7);
+assert.equal(replay.el('jump-brake_release').disabled,false);replay.el('jump-brake_release').click();assert(Number(replay.el('review-time').value)>=Number(replay.el('review-time').min));assert(replay.el('replay-advice').innerHTML.includes('브레이크'));
+replay.el('review-loop').checked=false;replay.el('review-time').value=String(Number(replay.el('review-time').max)-.01);replay.el('review-time').oninput();replay.el('review-play').click();for(let i=0;i<3;i++)replay.tick();assert.equal(Number(replay.el('review-time').value),Number(replay.el('review-time').max));assert(replay.el('review-play').textContent.includes('슬로모션'));
+replay.el('review-loop').checked=true;replay.el('review-play').click();replay.tick();assert(Number(replay.el('review-time').value)<Number(replay.el('review-time').max));replay.navigate('learn');const offpage=Number(replay.el('review-time').value);replay.tick();assert.equal(Number(replay.el('review-time').value),offpage);
+replay.sim.academy.onStart('corner_release');assert.equal(replay.el('results').hidden,true);assert.equal(replay.records().length,count);assert.equal(replay.storage.get('intsTrainingProgressV1'),score);
+// A clean finish can still fail release timing: focus its entry, not the finish.
+const releaseFail=harness([],{modules:true,fast:true});releaseFail.sim.academy.onStart('monza_t1');releaseFail.input('mouse');releaseFail.el('play').click();releaseFail.tick();
+const releaseScene=releaseFail.sim.scene;
+for(const p of releaseScene.points.slice(1)){
+  releaseFail.el('brake-range').value=p.s<=releaseScene.gates.entry+3?'.8':'0';releaseFail.el('brake-range').oninput();releaseFail.tick({x:p.x,y:p.y,speed:30/3.6,time:releaseFail.sim.last.time+.15});
+}
+const releaseRecord=releaseFail.records()[0];assert.equal(releaseRecord.reason,'finish');assert.equal(releaseRecord.offTime,0);assert(releaseRecord.trainingMetrics.brakeAtEntry>.3);assert(Number(releaseFail.el('review-time').max)<releaseRecord.time-2,'failed release focuses entry instead of clean finish');assert(Math.abs(Number(releaseFail.el('review-time').max)-(releaseRecord.sectors[0]+2))<.2);
+const early=harness([],{modules:true,dynamics:true,fast:true});early.sim.academy.onStart('monza_lesmo');early.el('play').click();for(let i=0;i<2000&&early.el('results').hidden;i++)early.tick();assert.equal(early.el('jump-turn_direction').disabled,false,'an earlier reachable steering event remains available');
+console.log('PASS replay integration: slow/normal clocks, pause, step, range/loop end, distance jumps, blur/navigation pause, live-state and score isolation, and retry clearing.');
 console.log('PASS guided launch, first braking with real keyboard input, measured progress, auto-demo isolation, circuit segment selection, retry clearing and free-mode return.');
 

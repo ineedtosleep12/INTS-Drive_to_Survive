@@ -2,6 +2,10 @@
 (function(root){
   'use strict';
   const APPROX='공식 레이아웃 참고·평면 근사';
+  const BOARD_NOTE='회전 기준선까지 모델 거리 · 실제 코스의 제동 지점이 아닙니다.';
+  const BOARD_DISTANCES=[200,150,100,50];
+  // These offsets define teaching gates on our schematic, not surveyed turn-in points.
+  const TURN_IN_BEFORE={monza:{rettifilo:80,lesmo1:110},nurbgp:{t1:75}};
   const MONZA='https://www.monzanet.it/en/circuit/';
   const NURB='https://www.nuerburgring.de/info/nuerburgring/race-tracks/grand-prix-track';
   const MONZA_MAP='https://www.monzanet.it/media/2023/05/2023_Brochure_Experience_Monza_compressed.pdf';
@@ -89,10 +93,20 @@
       let best=points[0];for(const p of points)if(distance(p,target)<distance(best,target))best=p;
       return {id:cornerId,name,s:best.s};
     }).sort((a,b)=>a.s-b.s);
+    const turnInReferences=d.type==='circuit'?corners.map(c=>{
+      const offsetBeforeCornerM=TURN_IN_BEFORE[id]?.[c.id]??80;
+      return {id:c.id+'-turn-in',cornerId:c.id,cornerName:c.name,s:c.s-offsetBeforeCornerM,label:'회전 기준선',modelOnly:true,offsetBeforeCornerM};
+    }):[];
+    const brakingBoards=turnInReferences.flatMap(ref=>BOARD_DISTANCES.map(m=>({s:ref.s-m,distance:m,label:m+' m',targetS:ref.s,cornerName:ref.cornerName})))
+      .filter(board=>board.s>=0&&board.targetS<=total).sort((a,b)=>a.s-b.s);
     const source={url:d.url||null,officialLengthM:d.url?d.length:null,approximation:true,
       mapUrl:d.mapUrl||null,label:d.url?APPROX:'가상 연습 코스',
+      brakingBoardNote:d.type==='circuit'?BOARD_NOTE:'',
+      turnInReferenceNote:d.type==='circuit'?'코너 대표 위치 앞에 학습용 회전 기준선을 정의했습니다. 표지판 숫자는 이 모델 중심선을 따라 기준선까지 남은 거리이며 실제 회전·제동 위치를 뜻하지 않습니다.':'',
+      turnInReferences:turnInReferences.map(ref=>({...ref})),
       notes:d.url?APPROX+' · 공식 공개 코너 순서와 개요도를 참고해 직접 작성한 중심선입니다. 전체 길이만 공식 길이에 맞췄으며 코너 위치·반경·일정한 12 m 폭은 학습용 근사입니다. 고저차·뱅킹·캠버·연석·실제 제동 지점은 재현하지 않습니다.':'직접 설계한 가상 평면 연습장입니다. 실제 도로·실측 코스를 나타내지 않습니다.'};
-    return {preset:id,id,name:d.name,type:d.type,description:d.description,points,width:d.width,total,closed:d.closed,startHeading:Math.atan2(points[1].y,points[1].x),corners,source,timeLimit:d.timeLimit,freePractice:!!d.freePractice,scale};
+    return {preset:id,id,name:d.name,type:d.type,description:d.description,points,width:d.width,total,closed:d.closed,startHeading:Math.atan2(points[1].y,points[1].x),corners,source,timeLimit:d.timeLimit,freePractice:!!d.freePractice,scale,
+      brakingBoards,turnInReferences,brakingBoardNote:d.type==='circuit'?BOARD_NOTE:''};
   }
   const catalog=Object.freeze(Object.keys(definitions).map(id=>{
     const d=definitions[id];return Object.freeze({id,name:d.name,type:d.type,description:d.description,officialLengthM:d.url?d.length:null,sourcedURLs:Object.freeze(d.url?[d.url,d.mapUrl]:[]),closed:d.closed,timeLimit:d.timeLimit});

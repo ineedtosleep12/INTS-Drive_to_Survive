@@ -38,10 +38,10 @@
       steps:['짧은 직선에서 제동 표지를 찾아 감속합니다.','회전 표지의 24–38 km/h를 확인하고 브레이크를 놓습니다.','오른쪽·왼쪽을 연결해 초록 탈출 표지까지 도로 안에 머뭅니다.'],
       successText:'첫 시케인을 낮은 진입 속도로 연결했어요.',focusMetric:'시케인 진입 속도',recordLabel:'첫 회전 진입 속도',metricKey:'entrySpeed',nextId:'monza_lesmo',
       runningHints:['제동 표지를 보고 감속 · 첫 회전 24–38 km/h','D / → 다음 A / ← · 시케인 사이에서 가속을 서두르지 마세요.','차가 직선을 향하면 조향을 풀고 가속하세요.']},
-    {id:'monza_lesmo',title:'몬자 레스모 1 · 탈출 가속',shortGoal:'40–60 km/h로 진입하고 브레이크를 놓은 뒤 가속하세요.',why:'한 개의 우회전에서 감속과 가속 입력을 분리합니다. 진입과 탈출 속도를 비교해 가속을 다시 시작한 결과를 확인합니다.',
+    {id:'monza_lesmo',title:'몬자 레스모 1 · 탈출 가속',shortGoal:'앞선 로지아 구간을 지나 레스모에 40–60 km/h로 진입하고 탈출 가속하세요.',why:'로지아 일부를 포함한 연결 진입 구간에서 시작합니다. 레스모 우회전의 감속과 가속 입력을 분리하고 진입·탈출 속도를 비교합니다.',
       category:'circuit',vehicle:'gt3',preset:'monza',surface:'dry',aids:'default',startSpeedKph:70,durationLabel:'약 25초',
       inputHint:'S로 감속 → D / →로 회전 → 브레이크를 놓고 W / ↑.',
-      steps:['회전 표지에서 40–60 km/h가 되도록 감속합니다.','D / →로 우회전하며 다음 탈출 구간을 봅니다.','브레이크와 가속을 겹치지 않고 탈출 속도를 진입보다 높입니다.'],
+      steps:['앞선 로지아 구간을 지나 레스모 회전 표지에서 40–60 km/h가 되도록 감속합니다.','D / →로 우회전하며 다음 탈출 구간을 봅니다.','브레이크와 가속을 겹치지 않고 탈출 속도를 진입보다 높입니다.'],
       successText:'브레이크와 가속을 분리해 탈출했어요.',focusMetric:'진입 대비 탈출 속도',recordLabel:'탈출 속도',metricKey:'exitSpeed',nextId:'nurb_t1',
       runningHints:['회전 전 40–60 km/h · 주황 표지부터 준비하세요.','D / →로 우회전 · 브레이크를 놓고 가속을 준비하세요.','W / ↑로 가속 · 탈출 속도를 진입보다 높여 보세요.']},
     {id:'nurb_t1',title:'뉘르부르크링 GP · T1 헤어핀',shortGoal:'25–40 km/h로 진입해 긴 우회전을 도로 안에서 마치세요.',why:'헤어핀에서는 첫 회전 뒤에도 길이 계속 돌아갑니다. 낮은 진입 속도를 만든 뒤 출구가 열릴 때까지 조향을 유지하는 연습입니다.',
@@ -109,12 +109,12 @@
   function scene(id){
     const m=get(id);if(!m)return null;
     let s,entry,exit,brake;
-    if(id==='monza_t1'){s=segment('monza','rettifilo',220,165);brake=70;entry=140;exit=340;}
-    else if(id==='monza_lesmo'){s=segment('monza','lesmo1',200,145);brake=35;entry=90;exit=260;}
-    else if(id==='nurb_t1'){s=segment('nurbgp','t1',220,170);brake=60;entry=145;exit=335;}
+    if(id==='monza_t1'){s=segment('monza','rettifilo',300,165);brake=150;entry=220;exit=420;}
+    else if(id==='monza_lesmo'){s=segment('monza','lesmo1',320,145);brake=155;entry=210;exit=380;}
+    else if(id==='nurb_t1'){s=segment('nurbgp','t1',300,170);brake=140;entry=225;exit=415;}
     else if(id==='whole_monza'){
       const parent=root.GripTracks?.get('monza');if(!parent)return null;s={...parent,parentTrack:'monza',parentStartS:0,parentEndS:parent.total};
-      entry=parent.corners[0].s-80;exit=parent.corners.at(-1).s+140;brake=entry-80;
+      entry=parent.turnInReferences.find(ref=>ref.cornerId==='rettifilo').s;exit=parent.corners.at(-1).s+140;brake=entry-80;
     }else{
       s=synthetic(id);
       if(id==='intro_brake'){brake=18;entry=55;exit=120;}
@@ -125,10 +125,19 @@
     if(!s)return null;
     s.id=id;s.preset=id==='whole_monza'?'monza':id;s.name=m.title;s.trainingId=id;s.training=true;s.trainingNote=NOTE;s.description=m.shortGoal+' '+NOTE;
     s.startHeading=Math.atan2(s.points[1].y-s.points[0].y,s.points[1].x-s.points[0].x);s.gates={entry,exit};s.timeLimit=id==='whole_monza'?600:90;
+    if(['monza_t1','monza_lesmo','nurb_t1'].includes(id)){
+      const cornerId={monza_t1:'rettifilo',monza_lesmo:'lesmo1',nurb_t1:'t1'}[id],corner=s.corners.find(c=>c.id===cornerId);
+      // Segment s is local route distance. Rebuild both references and boards after slicing.
+      s.turnInReferences=[{id:cornerId+'-turn-in',cornerId,cornerName:corner.name,s:entry,label:'회전 기준선',modelOnly:true,offsetBeforeCornerM:corner.s-entry}];
+      s.brakingBoards=[200,150,100,50].map(distance=>({s:entry-distance,distance,label:distance+' m',targetS:entry,cornerName:corner.name}));
+      s.source={...s.source,turnInReferences:s.turnInReferences.map(ref=>({...ref}))};
+    }else if(id!=='whole_monza'){
+      s.brakingBoards=[];s.turnInReferences=[];s.brakingBoardNote='';
+    }
     s.landmarks=[{s:brake,label:id==='intro_brake'?'브레이크로 정지':id==='drift_circle_intro'?'40 km/h 이하':'감속 준비',type:'brake'},
-      {s:entry,label:id==='intro_brake'?'곧게 멈추기':id==='drift_circle_intro'?'원 선회':'회전 시작',type:'turn'},
+      {s:entry,label:id==='intro_brake'?'곧게 멈추기':id==='drift_circle_intro'?'원 선회':s.brakingBoards.length?'회전 기준선':'회전 시작',type:'turn'},
       {s:exit,label:id==='intro_brake'?'직선 연습장':id==='drift_circle_intro'?'선회 마무리':'탈출',type:'exit'}];
-    if(id==='whole_monza')s.landmarks=[{s:brake,label:'첫 시케인 감속 준비',type:'brake'},...s.corners.map(c=>({s:c.s,label:c.name,type:'turn'})),{s:s.total-55,label:'완주선까지',type:'exit'}];
+    if(id==='whole_monza')s.landmarks=[{s:brake,label:'첫 시케인 감속 준비',type:'brake'},...s.turnInReferences.map(ref=>({s:ref.s,label:ref.cornerName+' 회전 기준선',type:'turn'})),{s:s.total-55,label:'완주선까지',type:'exit'}];
     return s;
   }
   const measured=v=>typeof v==='number'&&Number.isFinite(v)&&v>=0;

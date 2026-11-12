@@ -1,6 +1,6 @@
 {
   "name": "ints-drive-to-survive",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "description": "A Korean browser-based vehicle dynamics learning lab for sim racing, rally and drift fundamentals.",
   "scripts": {
