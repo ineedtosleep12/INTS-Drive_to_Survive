@@ -10,23 +10,36 @@
 </head>
 <body>
 <header class="topbar">
-  <a class="brand" href="#lab" aria-label="INTS Drive to Survive 실험실"><span class="brand-mark">//</span> INTS'<span>DRIVE</span><small>TO SURVIVE · LEARNING LAB</small></a>
-  <div class="top-meta"><span class="status-dot"></span> 가벼운 브라우저 훈련 <span class="version">BUILD 0.2</span></div>
+  <a class="brand" href="#home" aria-label="INTS Drive to Survive 연습 시작"><span class="brand-mark">//</span> INTS'<span>DRIVE</span><small>TO SURVIVE · LEARNING LAB</small></a>
+  <div class="top-meta"><span class="status-dot"></span> 가벼운 브라우저 훈련 <span class="version">BUILD 0.3</span></div>
 </header>
 <nav class="tabs" aria-label="훈련 메뉴">
-  <button data-page="lab" class="active" aria-current="page"><span>01</span> 거동 실험실</button>
-  <button data-page="practice"><span>02</span> 반복 훈련</button>
+  <button data-page="home" class="active" aria-current="page"><span>01</span> 연습 시작</button>
+  <button data-page="lab"><span>02</span> 자유 실험</button>
+  <button data-page="practice">5회 반복</button>
   <button data-page="learn"><span>03</span> 원리 & 판단</button>
   <button data-page="guide"><span>04</span> 종합 가이드</button>
   <button data-page="transfer"><span>05</span> 실전 연계</button>
   <button data-page="history"><span>06</span> 내 기록</button>
 </nav>
 <main>
-  <section id="sim-page">
+  <section id="home-page"><div id="academy-root"></div></section>
+  <section id="sim-page" hidden>
     <div class="page-heading"><div><p class="eyebrow" id="page-kicker">OBSERVE → PREDICT → ADJUST</p><h1 id="page-title">차의 반응을 읽는 연습.</h1><p class="intro" id="page-intro">한 번에 입력 하나만 바꾸세요. 어디에 접지가 남아 있는지부터 봅니다.</p></div><button class="btn subtle" id="help-toggle" aria-expanded="false" aria-controls="quick-help">처음이라면 <span>↗</span></button></div>
     <div class="help-box" id="quick-help" hidden>
       <strong>첫 10분은 이렇게</strong><ol><li><b>원리 & 판단</b>에서 하중 이동과 접지 예산을 확인합니다.</li><li><b>거동 실험실</b>에서 속도를 낮추고, 조향·브레이크를 하나씩 바꿉니다.</li><li><b>반복 훈련</b>에서 같은 코너를 5번 달리고 진입·회전·탈출 편차를 비교합니다.</li></ol><p>ACC · LMU · AMS2 · EA WRC · ACR · AC 공통 개념을 위한 교육용 근사입니다. 게임별 타이어, FFB, 셋업, 온도·마모·연료는 재현하지 않습니다.</p>
     </div>
+    <section id="mission-panel" class="card mission-panel" hidden aria-label="지금 연습하는 목표">
+      <div class="mission-heading"><div><p id="mission-label" class="eyebrow">GUIDED PRACTICE</p><h2 id="mission-title"></h2></div><button class="btn subtle" id="mission-home">← 다른 연습</button></div>
+      <p id="mission-goal" class="mission-goal"></p><p id="mission-why"></p>
+      <ol id="mission-steps" class="mission-steps"></ol>
+      <div class="mission-live"><b id="mission-phase">준비</b><span id="mission-cue"></span></div>
+      <div class="mission-progress" aria-hidden="true"><i id="mission-progress-bar"></i></div>
+      <p class="mission-target"><b>이번 성공 조건</b> <span id="mission-success"></span></p>
+      <div class="mission-actions"><button class="btn primary" id="mission-start">▶ 직접 시작</button><button class="btn" id="mission-observe">자동 시범 보기</button><button class="text-btn" id="mission-details" aria-expanded="false">차량·상세 데이터 펼치기</button></div>
+      <div class="mission-inputs"><span>조작 선택</span><div class="segmented" role="group" aria-label="연습 입력 방식"><button data-input="keyboard" class="active" aria-pressed="true">키보드</button><button data-input="mouse" aria-pressed="false">마우스</button><button data-input="gamepad" aria-pressed="false">패드</button></div></div>
+      <p id="mission-model-note" class="fineprint"></p>
+    </section>
     <div class="vehicle-strip card"><div><label for="vehicle">차량 계열 · 교육용 모델</label><select id="vehicle"><option value="gt3">GT3 · 프런트엔진 RWD</option><option value="hypercar">하이퍼카 · 미드십 계열</option><option value="formula">포뮬러 · 고다운포스</option><option value="rally1">Rally1 · 2025 비하이브리드 AWD</option><option value="ae86">AE86 · 1983 순정 계열</option><option value="touring_fwd">FWD · 프런트엔진</option><option value="midship">MR · 미드십 RWD</option><option value="rearengine">RR · 리어엔진 RWD</option></select></div><div><label for="aids">접지 예산 기반 TC 근사</label><select id="aids"><option value="default">차량 기본값</option><option value="off">끄기</option><option value="on">켜기 · 비교 실험</option></select></div><div class="vehicle-summary"><strong id="vehicle-title">GT3 계열</strong><span id="vehicle-spec">차량 모델 준비 중</span></div><button class="btn subtle" id="vehicle-details-toggle" aria-expanded="false">제원·가정 보기</button></div>
     <div id="vehicle-details" class="help-box" hidden></div>
     <div class="session-strip card">
@@ -39,14 +52,15 @@
     <div class="workspace">
       <div class="drive-column">
         <section class="arena card" aria-label="차량 주행 실험">
+          <div id="drive-goal" class="drive-goal" hidden><b id="drive-goal-title"></b><span id="drive-goal-cue"></span><small id="drive-load-cue"></small></div>
           <div class="arena-top"><div><span class="status-dot" id="run-dot"></span><span id="run-status">준비됨</span><span class="tag" id="scene-tag">90° LEFT</span></div><div class="arena-tools"><label class="small-toggle"><input type="checkbox" id="show-path" checked> 기준선</label><button class="icon-btn" id="camera-toggle" title="카메라 전환" aria-label="전체 코스와 차량 추적 카메라 전환">⌖</button></div></div>
-          <div class="canvas-wrap"><canvas id="track" aria-label="차량 위치, 차체 방향, 이동 방향과 코스를 표시하는 실시간 주행 화면"></canvas><div class="speed-hud"><strong id="speed">70</strong><span>KM/H</span></div><div class="time-hud"><span id="phase">진입 준비</span><strong id="elapsed">00.00</strong></div><div class="start-hint" id="start-hint"><span>READY TO OBSERVE</span><strong>브레이크를 놓으며<br>차가 도는 순간을 보세요.</strong><p id="scene-description">민트색 선은 비교용 중심선입니다. 최적 레이싱 라인이 아닙니다.</p></div><div class="canvas-legend"><span><i class="legend-line lime"></i>차체 방향</span><span><i class="legend-line cyan"></i>이동 방향</span><span><i class="legend-line muted-line"></i>주행 궤적</span></div></div>
-          <div class="transport"><button class="btn primary" id="play">▶ 시작</button><button class="btn" id="reset">↺ 다시 시작</button><label for="time-scale">시간 <select id="time-scale"><option value="1">1×</option><option value="0.5">0.5× · 관찰</option></select></label><span id="track-status">코스 안</span></div>
+          <div class="canvas-wrap"><canvas id="track" aria-label="차량 위치, 차체 방향, 이동 방향과 코스를 표시하는 실시간 주행 화면"></canvas><div class="speed-hud"><strong id="speed">70</strong><span>KM/H</span></div><div class="time-hud"><span id="phase">진입 준비</span><strong id="elapsed">00.00</strong></div><div class="start-hint" id="start-hint"><span>READY TO OBSERVE</span><strong>브레이크를 놓으며<br>차가 도는 순간을 보세요.</strong><p id="scene-description">민트색 선은 비교용 중심선입니다. 최적 레이싱 라인이 아닙니다.</p></div><div id="mouse-pad-drive"></div><div class="canvas-legend"><span><i class="legend-line lime"></i>차체 방향</span><span><i class="legend-line cyan"></i>이동 방향</span><span><i class="legend-line muted-line"></i>주행 궤적</span></div></div>
+          <div class="transport"><button class="btn primary" id="play">▶ 시작</button><button class="btn" id="reset">↺ 다시 시작</button><button class="btn subtle" id="end-run" hidden>현재 시도 분석</button><label for="time-scale">시간 <select id="time-scale"><option value="1">1×</option><option value="0.5">0.5× · 관찰</option></select></label><span id="track-status">코스 안</span></div>
         </section>
         <section class="card input-panel">
           <div class="section-heading"><h2>내 입력</h2><div class="segmented" role="group" aria-label="입력 방식"><button data-input="keyboard" class="active" aria-pressed="true">키보드</button><button data-input="mouse" aria-pressed="false">마우스</button><button data-input="gamepad" aria-pressed="false">패드</button></div></div>
           <p class="input-guide" id="input-guide"><kbd>W</kbd> 가속 <kbd>S</kbd> 브레이크 <kbd>A</kbd><kbd>D</kbd> 조향 · 방향키도 사용 · <kbd>Space</kbd> 일시정지 <kbd>R</kbd> 재시작</p>
-          <div id="mouse-pad" hidden tabindex="0" role="application" aria-label="마우스 조작 패드. 누른 채 좌우로 조향, 위로 가속, 아래로 제동."><span class="pad-top">가속</span><span class="pad-bottom">제동</span><span class="pad-left">왼쪽</span><span class="pad-right">오른쪽</span><div id="pad-dot"></div></div>
+          <div id="mouse-pad-home"><div id="mouse-pad" hidden tabindex="0" role="application" aria-label="마우스 조작 패드. 누른 채 좌우로 조향, 위로 가속, 아래로 제동."><span class="pad-top">가속</span><span class="pad-bottom">제동</span><span class="pad-left">왼쪽</span><span class="pad-right">오른쪽</span><div id="pad-dot"></div></div></div>
           <div class="input-ranges"><div class="steer-input"><label for="steer-range">조향 <output id="steer-out">0°</output></label><input id="steer-range" type="range" min="-1" max="1" step="0.01" value="0"><div class="range-ends"><span>← 왼쪽</span><span>오른쪽 →</span></div></div><div><label for="throttle-range">가속 <output id="throttle-out">0%</output></label><input id="throttle-range" class="throttle" type="range" min="0" max="1" step="0.01" value="0"></div><div><label for="brake-range">브레이크 <output id="brake-out">0%</output></label><input id="brake-range" class="brake" type="range" min="0" max="1" step="0.01" value="0"></div></div>
           <div class="aux-inputs"><div><label for="handbrake-range">핸드브레이크 <output id="handbrake-out">0%</output> <kbd>E</kbd></label><input id="handbrake-range" type="range" min="0" max="1" step="0.01" value="0"></div><div><label for="clutch-range">클러치 분리 <output id="clutch-out">0%</output> <kbd>Q</kbd></label><input id="clutch-range" type="range" min="0" max="1" step="0.01" value="0"></div></div>
           <p class="fineprint">마우스 슬라이더는 입력을 유지합니다. 조향은 앞바퀴 각도입니다. 핸드브레이크는 뒤축 제동 근사, 클러치는 구동 분리만 계산하며 실제 바퀴 잠김·클러치 킥 에너지는 재현하지 않습니다.</p>
@@ -70,6 +84,6 @@
 </main>
 <dialog id="model-dialog"><form method="dialog"><button class="icon-btn close-dialog" aria-label="닫기">×</button></form><p class="eyebrow">ABOUT THIS TRAINER</p><h2>차를 읽는 연습을 위한 작은 실험실.</h2><p>평면 차량 모델, 앞뒤 타이어의 횡력·종력 결합, 근사 하중 이동을 사용합니다. 교육용 모델이며 특정 게임이나 실제 차에 맞춰 검증한 모델은 아닙니다.</p><p>자동 전진 기어와 ABS에 가까운 제동을 가정합니다. 서스펜션 세부 운동, 캠버, 노면 요철, 점프, 타이어 열·마모, 연료 소모, 차동장치 세팅, 휠의 피드백은 재현하지 않습니다. 자갈은 낮은 접지의 근사이며 실제 랠리 노면 모델이 아닙니다. 전진 상태를 가정하므로 후진·완전한 스핀·90°를 넘는 차체 슬립은 재현 범위 밖입니다.</p><p>훈련 기록은 이 브라우저에만 저장됩니다. 반복 훈련은 짧은 코너를 같은 조건으로 재현하는 연습입니다. 실제 롱런에서의 타이어 관리·연료 변화·트래픽 판단까지 평가하지는 않습니다.</p><h3>실제 심으로 가져갈 때</h3><p>익숙한 차와 고정 셋업으로 한 코너를 고르세요. 입력 하나만 바꾸고 진입 속도, 브레이크 해제, 최소 속도, 탈출 시점을 비교하세요. 어느 구간에서 시간을 잃었는지 확인한 뒤 전체 랩으로 넓히세요.</p><p class="fineprint">시간은 시뮬레이션 시간입니다. 0.5× 기록은 관찰 연습으로 따로 구분됩니다. 추천 수치·접지 표시·진단은 이 모델 안에서만 해석하세요. 패드는 브라우저의 표준 Gamepad 매핑(왼쪽 스틱·LT·RT)을 사용하며 기기/브라우저에 따라 달라질 수 있습니다.</p></dialog>
 <div id="toast" role="status" hidden></div>
-<script src="physics.js"></script><script src="tracks.js"></script><script src="lessons.js"></script><script src="guide.js"></script><script src="transfer.js"></script><script src="render.js"></script><script src="app.js"></script>
+<script src="physics.js"></script><script src="tracks.js"></script><script src="training.js"></script><script src="debrief.js"></script><script src="academy.js"></script><script src="lessons.js"></script><script src="guide.js"></script><script src="transfer.js"></script><script src="render.js"></script><script src="app.js"></script>
 </body>
 </html>

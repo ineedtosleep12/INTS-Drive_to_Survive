@@ -97,10 +97,12 @@
         gate(ctx,atDistance(points,110),roadWidth,toScreen,'#829ca9','회전 / 탈출',false);
         const board=toScreen({x:30,y:-roadWidth/2-6});label(ctx,'15 m',board.x,board.y,'#c8d5dd');
       }
+      for(const marker of scene.landmarks||[]){const color=marker.type==='brake'?C.coral:marker.type==='exit'?C.lime:C.cyan;gate(ctx,atDistance(points,marker.s),roadWidth,toScreen,color,marker.label,false);}
     }
     if(options.ghost && options.ghost.length>1)line(ctx,options.ghost.slice(-1500).map(toScreen),'#b5f36b55',1.3,[3,4]);
     if(options.trail && options.trail.length>1)line(ctx,options.trail.slice(-1500).map(toScreen),'#77929f99',1.6);
     const p=toScreen({x:number(s.x),y:number(s.y)}),cs=Math.max(scale,3.1),heading=number(s.heading);
+    if(options.review){ctx.beginPath();ctx.arc(p.x,p.y,22,0,Math.PI*2);ctx.strokeStyle=C.coral;ctx.lineWidth=2;ctx.stroke();label(ctx,'기록 위치 · '+number(options.review.t).toFixed(2)+' s',w/2,23,C.coral);}
     // Body local x points forward; canvas local y points to the car's right.
     ctx.save();ctx.translate(p.x,p.y);ctx.rotate(-heading);
     ctx.shadowColor='#0009';ctx.shadowBlur=8;ctx.fillStyle='#9ed75e';ctx.strokeStyle='#d0ff9f';ctx.lineWidth=.8;
@@ -145,7 +147,7 @@
       ctx.fillStyle='#6f8999';ctx.font='8px "Malgun Gothic", sans-serif';ctx.fillText('← 횡력 →',cx,cy-r-12);
     });
   }
-  function trace(canvas,samples){
+  function trace(canvas,samples,options={}){
     const view=surface(canvas);if(!view)return;
     const {ctx,w,h}=view,data=Array.isArray(samples)?samples:[],left=28,right=w-8,top=8,bottom=h-17,pw=right-left,ph=bottom-top;
     if(pw<20 || ph<10)return;
@@ -158,6 +160,7 @@
     const visible=data.filter(s=>Number.isFinite(s.t) && s.t>=start && s.t<=end);
     ctx.save();ctx.beginPath();ctx.rect(left,top,pw,ph);ctx.clip();
     for(const item of series){const pts=visible.map(s=>({x:left+(s.t-start)/12*pw,y:bottom-clamp(item.value(s),0,1)*ph}));line(ctx,pts,item.color,item.field==='speed'?1.1:1.5);}
+    if(Number.isFinite(options.cursor)){const x=left+(options.cursor-start)/12*pw;line(ctx,[{x,y:top},{x,y:bottom}],C.coral,1.4,[3,3]);}
     ctx.restore();
     if(!visible.length){ctx.fillStyle='#6f8999';ctx.textAlign='center';ctx.font='10px "Malgun Gothic", sans-serif';ctx.fillText('주행하면 입력 기록이 표시됩니다',left+pw/2,top+ph/2);}
   }

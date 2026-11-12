@@ -60,7 +60,7 @@ function harness(saved=[],options={}){
   }
   register(html);
   const el=id=>{if(!els.has(id)){if(strictDOM)return null;els.set(id,new E(id));}return els.get(id);};
-  const page=['lab','practice','learn','guide','transfer','history'].map(name=>{const e=new E();e.dataset.page=name;return e;});
+  const page=['home','lab','practice','learn','guide','transfer','history'].map(name=>{const e=new E();e.dataset.page=name;return e;});
   const inputs=['keyboard','mouse','gamepad'].map(name=>{const e=new E();e.dataset.input=name;return e;});
   for(const [key,value] of Object.entries({preset:'corner',vehicle:'gt3',aids:'default',surface:'dry',drive:'rwd','start-speed':'70','time-scale':'1'})){el(key).value=value;el(key).tagName=key==='start-speed'?'INPUT':'SELECT';}
   el('show-path').checked=true;
@@ -68,7 +68,7 @@ function harness(saved=[],options={}){
     console,Math,Date,Number,Set,Map,JSON,Array,Blob,structuredClone,Intl,
     URL:{createObjectURL:()=>'',revokeObjectURL(){}},Event:class{constructor(type){this.type=type;}},
     navigator:{getGamepads:()=>sim.pads||[]},localStorage:{getItem:key=>storage.get(key)??null,setItem:(key,value)=>storage.set(key,value)},
-    location:{hash:''},setTimeout:()=>0,clearTimeout(){},requestAnimationFrame:fn=>frames.push(fn),devicePixelRatio:2,
+    location:{hash:options.home?'':'#lab'},setTimeout:()=>0,clearTimeout(){},requestAnimationFrame:fn=>frames.push(fn),devicePixelRatio:2,
     document:{getElementById:el,querySelectorAll:query=>query==='[data-page]'?page:query==='[data-input]'?inputs:[],addEventListener:(type,fn)=>(docEvents[type]??=[]).push(fn),createElement:tag=>new E('',tag),hidden:false,head:new E('head','head')},
     window:{history:{replaceState(a,b,url){context.location.hash=url;}},addEventListener:(type,fn)=>(winEvents[type]??=[]).push(fn),scrollTo(){}}
   };
@@ -79,7 +79,8 @@ function harness(saved=[],options={}){
     const scripts=[...html.matchAll(/<script\s+src="([^"]+)"/g)].map(m=>m[1]).filter(x=>x!=='app.js');
     sim.pending=[];
     for(const script of scripts){const file=path.join(root,script);if(!fs.existsSync(file)){sim.pending.push(script);continue;}vm.runInContext(fs.readFileSync(file,'utf8'),context,{filename:script});}
-    realPhysics=context.GripPhysics;renderer=context.GripRenderer;
+    realPhysics=context.GripPhysics;renderer=options.fast?renderer:context.GripRenderer;
+    const mount=context.GripAcademy?.mount;if(mount)context.GripAcademy={...context.GripAcademy,mount(root,callbacks){sim.academy=callbacks;return mount(root,callbacks);}};
   }else{
     context.GripLessons={mount(){}};context.GripGuide={mount(){}};context.GripTransfer={mount(){}};
     if(options.tracks)context.GripTracks=options.tracks;
@@ -169,4 +170,27 @@ if(smoke.context.GripTracks){
 console.log('PASS app: sessions, sectors, record validation, vehicle/aid comparison separation, all profile selectors, keyboard/mouse/gamepad handbrake & clutch, pause/release, closed-track full traversal, and real-module DOM/Canvas startup.');
 if(smoke.sim.pending.length){console.log('PENDING optional module smoke: '+smoke.sim.pending.join(', '));if(process.env.APP_REQUIRE_COMPLETE==='1')throw new Error('Required modules missing: '+smoke.sim.pending.join(', '));}
 else console.log('PASS all HTML script references present and loaded.');
+
+// Guided launch keeps the vehicle/task fixed, isolates demos, and stores measured results.
+const guided=harness([],{modules:true,dynamics:true,home:true,fast:true});
+assert.equal(guided.context.location.hash,'#home');assert.equal(guided.el('home-page').hidden,false);
+guided.sim.academy.onStart('intro_brake');assert.equal(guided.sim.last.vehicle,'gt3');assert.equal(guided.el('preset').disabled,true);assert.equal(guided.el('mission-panel').hidden,false);assert.equal(guided.el('play').textContent,'▶ 시작');
+guided.el('play').click();guided.key('keydown','KeyS');for(let i=0;i<200&&guided.records().length===0;i++)guided.tick();guided.key('keyup','KeyS');
+assert.equal(guided.records().length,1);assert.equal(guided.records()[0].reason,'stop');assert.equal(JSON.parse(guided.storage.get('intsTrainingProgressV1')).intro_brake.passed,true);assert(guided.el('review-time'));
+const persisted=guided.storage.get('intsTrainingProgressV1');guided.sim.academy.onObserve('intro_brake');for(let i=0;i<200&&guided.el('results').hidden;i++)guided.tick();
+assert.equal(guided.records().length,1,'auto demo never saves a driving record');assert.equal(guided.storage.get('intsTrainingProgressV1'),persisted,'auto demo never changes progress');
+guided.sim.academy.onStart('monza_t1');guided.tick();assert.equal(guided.sim.scene.parentTrack,'monza');assert(guided.sim.scene.total<500);assert.equal(guided.el('results').hidden,true);guided.navigate('lab');assert.equal(guided.el('mission-panel').hidden,true);assert.equal(guided.el('preset').disabled,false);
+for(const id of ['intro_brake','corner_release','monza_t1','monza_lesmo','nurb_t1','rally_hairpin','drift_circle_intro','whole_monza']){
+  const demo=harness([],{modules:true,dynamics:true,fast:true});demo.sim.academy.onObserve(id);
+  for(let i=0;i<14000&&demo.el('results').hidden;i++)demo.tick();
+  assert.equal(demo.el('results').hidden,false,id+' demo should finish');assert.equal(demo.records().length,0,id+' demo not saved');
+  const verdictText=demo.el('results').innerHTML;console.log('DEMO '+id+': '+verdictText.match(/<h2>(.*?)<\/h2>/)?.[1]);
+  assert(verdictText.includes(demo.context.GripTraining.get(id).successText),id+' example should meet its measured training criteria');
+}
+const failure=harness([],{modules:true,dynamics:true,fast:true});failure.sim.academy.onStart('corner_release');failure.el('play').click();for(let i=0;i<4000&&failure.el('results').hidden;i++)failure.tick();
+assert(failure.records()[0].offTime>0);assert.equal(JSON.parse(failure.storage.get('intsTrainingProgressV1')).corner_release.passed,false);assert(failure.el('review-values').innerHTML.includes('km/h'));
+failure.el('review-time').value='2';failure.el('review-time').oninput();failure.tick();assert(failure.sim.renderOptions.review);assert.equal(failure.sim.renderOptions.review.wheelSteer,0);assert(failure.el('review-values').innerHTML.includes('중립'));
+failure.el('reset').click();assert.equal(failure.el('results').hidden,true,'old analysis must disappear before a new trace starts');failure.tick();assert.equal(failure.sim.renderOptions.review,null);
+failure.input('mouse');assert(failure.el('mission-cue').textContent.includes('패드'));failure.input('gamepad');assert(failure.el('mission-cue').textContent.includes('LT'));
+console.log('PASS guided launch, first braking with real keyboard input, measured progress, auto-demo isolation, circuit segment selection, retry clearing and free-mode return.');
 
