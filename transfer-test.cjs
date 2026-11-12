@@ -1,0 +1,10 @@
+const assert=require('node:assert/strict');
+const {parseLaps,stats,lapTime,validNote,validSession}=require('./dist/transfer.js');
+const p=parseLaps('1:49.321\n1:49.550\n!1:52.100\n109.700');
+assert.equal(p.errors.length,0);assert.equal(p.laps.length,4);assert.equal(p.laps[2].valid,false);
+const s=stats(p.laps);assert.equal(s.valid,3);assert.equal(s.validRate,.75);assert.equal(s.median,109.55);assert(Math.abs(s.range-.379)<1e-10);assert.equal(s.fade,null);
+assert.equal(parseLaps('1:61.000\n-5\n1:2:3\nNaN').errors.length,4);assert.equal(parseLaps('1:00\n! 61.1').errors.length,0);assert.equal(parseLaps(Array(201).fill('100').join('\n')).errors.length,1);
+assert.equal(stats([{time:100,valid:false}]).median,null);assert.equal(stats([{time:100,valid:true}]).sd,null);assert.equal(stats([100,100,100,101,101,101].map(time=>({time,valid:true}))).fade,1);assert.equal(lapTime(109.321),'1:49.321');
+const note={id:'a',at:new Date().toISOString(),trackId:'monza',vehicle:'gt3',game:'LMU',trackName:'Monza',car:'BMW',corner:'T1',reference:'Marker',gear:'2',conditions:'dry',warning:'',status:'hypothesis'};assert(validNote(note));assert(!validNote({...note,vehicle:'<img src=x>'}));assert(!validNote({...note,status:'official'}));
+const session={id:'s',at:new Date().toISOString(),game:'LMU',car:'BMW',track:'Monza',conditions:'dry',focus:'release',review:'',incidents:0,laps:p.laps};assert(validSession(session));assert(!validSession({...session,laps:[{time:Infinity,valid:true}]}));
+console.log('PASS transfer: lap parsing, invalid laps, median, spread, pace drift, record validation.');

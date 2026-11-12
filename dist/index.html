@@ -11,13 +11,15 @@
 <body>
 <header class="topbar">
   <a class="brand" href="#lab" aria-label="INTS Drive to Survive 실험실"><span class="brand-mark">//</span> INTS'<span>DRIVE</span><small>TO SURVIVE · LEARNING LAB</small></a>
-  <div class="top-meta"><span class="status-dot"></span> 가벼운 브라우저 훈련 <span class="version">PROTOTYPE 01</span></div>
+  <div class="top-meta"><span class="status-dot"></span> 가벼운 브라우저 훈련 <span class="version">BUILD 0.2</span></div>
 </header>
 <nav class="tabs" aria-label="훈련 메뉴">
   <button data-page="lab" class="active" aria-current="page"><span>01</span> 거동 실험실</button>
   <button data-page="practice"><span>02</span> 반복 훈련</button>
   <button data-page="learn"><span>03</span> 원리 & 판단</button>
-  <button data-page="history"><span>04</span> 내 기록</button>
+  <button data-page="guide"><span>04</span> 종합 가이드</button>
+  <button data-page="transfer"><span>05</span> 실전 연계</button>
+  <button data-page="history"><span>06</span> 내 기록</button>
 </nav>
 <main>
   <section id="sim-page">
@@ -25,11 +27,13 @@
     <div class="help-box" id="quick-help" hidden>
       <strong>첫 10분은 이렇게</strong><ol><li><b>원리 & 판단</b>에서 하중 이동과 접지 예산을 확인합니다.</li><li><b>거동 실험실</b>에서 속도를 낮추고, 조향·브레이크를 하나씩 바꿉니다.</li><li><b>반복 훈련</b>에서 같은 코너를 5번 달리고 진입·회전·탈출 편차를 비교합니다.</li></ol><p>ACC · LMU · AMS2 · EA WRC · ACR · AC 공통 개념을 위한 교육용 근사입니다. 게임별 타이어, FFB, 셋업, 온도·마모·연료는 재현하지 않습니다.</p>
     </div>
+    <div class="vehicle-strip card"><div><label for="vehicle">차량 계열 · 교육용 모델</label><select id="vehicle"><option value="gt3">GT3 · 프런트엔진 RWD</option><option value="hypercar">하이퍼카 · 미드십 계열</option><option value="formula">포뮬러 · 고다운포스</option><option value="rally1">Rally1 · 2025 비하이브리드 AWD</option><option value="ae86">AE86 · 1983 순정 계열</option><option value="touring_fwd">FWD · 프런트엔진</option><option value="midship">MR · 미드십 RWD</option><option value="rearengine">RR · 리어엔진 RWD</option></select></div><div><label for="aids">접지 예산 기반 TC 근사</label><select id="aids"><option value="default">차량 기본값</option><option value="off">끄기</option><option value="on">켜기 · 비교 실험</option></select></div><div class="vehicle-summary"><strong id="vehicle-title">GT3 계열</strong><span id="vehicle-spec">차량 모델 준비 중</span></div><button class="btn subtle" id="vehicle-details-toggle" aria-expanded="false">제원·가정 보기</button></div>
+    <div id="vehicle-details" class="help-box" hidden></div>
     <div class="session-strip card">
-      <div><label for="preset">연습 장면</label><select id="preset"><option value="corner">레이싱 · 90° 코너</option><option value="brake">기초 · 직선 제동</option><option value="slalom">랠리 입문 · 완만한 슬라럼</option><option value="drift">드리프트 입문 · 스키드패드</option></select></div>
+      <div><label for="preset">연습 장면</label><select id="preset"><optgroup label="기초 실험"><option value="corner">레이싱 · 90° 코너</option><option value="brake">기초 · 직선 제동</option><option value="slalom">랠리 입문 · 슬라럼</option><option value="hairpin">랠리 · 헤어핀</option><option value="drift">드리프트 · 원돌이 경로</option><option value="figure8">드리프트 · 8자 전환</option></optgroup><optgroup label="종합 연습 · 평면 근사"><option value="monza">Monza · 학습용 레이아웃</option><option value="nurbgp">Nürburgring GP · 학습용 레이아웃</option><option value="rally_stage">랠리 · 짧은 가상 스테이지</option><option value="playground">드리프트 · 플레이그라운드</option><option value="touge">드리프트 · 짧은 가상 토우게</option></optgroup></select></div>
       <div><label for="surface">노면</label><select id="surface"><option value="dry">마른 아스팔트</option><option value="wet">젖은 아스팔트</option><option value="gravel">자갈 · 낮은 접지</option></select></div>
       <div><label for="drive">구동</label><select id="drive"><option value="rwd">후륜 · RWD</option><option value="fwd">전륜 · FWD</option><option value="awd">사륜 · AWD</option></select></div>
-      <div class="speed-setting"><label for="start-speed">시작 속도 <output id="start-speed-out">70</output> km/h</label><input type="range" id="start-speed" min="20" max="100" value="70" step="5"></div>
+      <div class="speed-setting"><label for="start-speed">시작 속도 <output id="start-speed-out">70</output> km/h</label><input type="range" id="start-speed" min="20" max="200" value="70" step="5"></div>
     </div>
     <div class="practice-intro card" id="practice-intro" hidden><div><span class="tag">5회 × 같은 조건</span><strong>가장 빠른 1회보다, 재현 가능한 5회.</strong><p>진입·회전·탈출 구간을 비교합니다. 코스 이탈은 유효 기록에서 제외합니다.</p></div><div class="attempt-counter"><span id="attempt-count">0</span><small>/ 5 완료</small></div><button class="btn" id="new-session">새 세트</button></div>
     <div class="workspace">
@@ -44,25 +48,28 @@
           <p class="input-guide" id="input-guide"><kbd>W</kbd> 가속 <kbd>S</kbd> 브레이크 <kbd>A</kbd><kbd>D</kbd> 조향 · 방향키도 사용 · <kbd>Space</kbd> 일시정지 <kbd>R</kbd> 재시작</p>
           <div id="mouse-pad" hidden tabindex="0" role="application" aria-label="마우스 조작 패드. 누른 채 좌우로 조향, 위로 가속, 아래로 제동."><span class="pad-top">가속</span><span class="pad-bottom">제동</span><span class="pad-left">왼쪽</span><span class="pad-right">오른쪽</span><div id="pad-dot"></div></div>
           <div class="input-ranges"><div class="steer-input"><label for="steer-range">조향 <output id="steer-out">0°</output></label><input id="steer-range" type="range" min="-1" max="1" step="0.01" value="0"><div class="range-ends"><span>← 왼쪽</span><span>오른쪽 →</span></div></div><div><label for="throttle-range">가속 <output id="throttle-out">0%</output></label><input id="throttle-range" class="throttle" type="range" min="0" max="1" step="0.01" value="0"></div><div><label for="brake-range">브레이크 <output id="brake-out">0%</output></label><input id="brake-range" class="brake" type="range" min="0" max="1" step="0.01" value="0"></div></div>
-          <p class="fineprint">마우스 모드에서는 슬라이더로 일정 입력을 유지할 수도 있습니다. 조향 값은 핸들 회전각이 아닌 앞바퀴 각도입니다.</p>
+          <div class="aux-inputs"><div><label for="handbrake-range">핸드브레이크 <output id="handbrake-out">0%</output> <kbd>E</kbd></label><input id="handbrake-range" type="range" min="0" max="1" step="0.01" value="0"></div><div><label for="clutch-range">클러치 분리 <output id="clutch-out">0%</output> <kbd>Q</kbd></label><input id="clutch-range" type="range" min="0" max="1" step="0.01" value="0"></div></div>
+          <p class="fineprint">마우스 슬라이더는 입력을 유지합니다. 조향은 앞바퀴 각도입니다. 핸드브레이크는 뒤축 제동 근사, 클러치는 구동 분리만 계산하며 실제 바퀴 잠김·클러치 킥 에너지는 재현하지 않습니다.</p>
         </section>
-        <section class="card trace-panel"><div class="section-heading"><h2>입력과 반응 <small>최근 12초</small></h2><div class="trace-legend"><span class="lime-text">가속</span><span class="coral-text">제동</span><span class="cyan-text">조향 크기</span><span>속도</span></div></div><canvas id="trace" aria-label="최근 12초간 가속, 브레이크, 조향 크기와 속도 변화"></canvas><p class="fineprint">입력은 0–100%, 속도는 0–120 km/h 범위로 정규화해서 표시합니다.</p></section>
+        <section class="card trace-panel"><div class="section-heading"><h2>입력과 반응 <small>최근 12초</small></h2><div class="trace-legend"><span class="lime-text">가속</span><span class="coral-text">제동</span><span class="cyan-text">조향 크기</span><span>속도</span></div></div><canvas id="trace" aria-label="최근 12초간 가속, 브레이크, 조향 크기와 속도 변화"></canvas><p class="fineprint">입력은 0–100%, 속도는 0–240 km/h 범위로 정규화해서 표시합니다.</p></section>
       </div>
       <aside class="telemetry-column" aria-label="차량 반응 설명">
         <section class="card grip-card"><div class="section-heading"><h2>타이어의 접지 예산</h2><span class="live-tag">LIVE MODEL</span></div><canvas id="grip" aria-label="앞뒤 타이어의 가속·제동과 횡력 사용량"></canvas><div class="grip-values"><div><span>앞축 요구 / 한계</span><strong id="front-use">0%</strong></div><div><span>뒤축 요구 / 한계</span><strong id="rear-use">0%</strong></div></div><p class="fineprint">원 안의 점은 실제 힘. 100% 초과는 요구량이 한계를 넘었다는 뜻입니다. 마찰원은 간략한 근사입니다.</p></section>
         <section class="card load-card"><div class="section-heading"><h2>하중의 이동</h2><span class="muted">정적 대비</span></div><div class="load-layout"><div class="load-grid"><div id="load-fl"><span>앞 왼쪽</span><b>100%</b><i></i></div><div id="load-fr"><span>앞 오른쪽</span><b>100%</b><i></i></div><div id="load-rl"><span>뒤 왼쪽</span><b>100%</b><i></i></div><div id="load-rr"><span>뒤 오른쪽</span><b>100%</b><i></i></div></div><div class="load-note">FRONT<br><span>↑</span><small>차량 위에서 보기</small></div></div><p class="fineprint">질량이 옮겨지는 게 아니라, 네 바퀴가 받는 수직하중이 달라집니다.</p></section>
-        <section class="card motion-card"><h2>차체 방향 ≠ 이동 방향</h2><div class="motion-metrics"><div><span>차체 슬립각 β</span><strong id="beta">0.0<small>°</small></strong></div><div><span>회전 속도 · 요레이트</span><strong id="yaw">0.0<small>°/s</small></strong></div></div><div class="tire-slips"><span>타이어 슬립각 α</span><span>앞 <b id="alpha-f">0.0°</b> / 뒤 <b id="alpha-r">0.0°</b></span></div><p class="fineprint">β는 차체와 속도 방향의 차이, α는 각 타이어가 향한 방향과 그 타이어 접점 속도 방향의 차이입니다.</p></section>
+        <section class="card motion-card"><h2>차체 방향 ≠ 이동 방향</h2><div class="motion-metrics"><div><span>차체 슬립각 β</span><strong id="beta">0.0<small>°</small></strong></div><div><span>회전 속도 · 요레이트</span><strong id="yaw">0.0<small>°/s</small></strong></div></div><div class="tire-slips"><span>타이어 슬립각 α</span><span>앞 <b id="alpha-f">0.0°</b> / 뒤 <b id="alpha-r">0.0°</b></span></div><div class="tire-slips"><span>추가 공력 하중</span><b id="downforce">0 N</b></div><div class="tire-slips"><span>횡가속 / TC 근사 개입</span><b id="g-force">0.00 g / —</b></div><p class="fineprint">β는 차체와 속도 방향의 차이, α는 각 타이어 방향과 접점 속도 방향의 차이입니다. 공력·타이어 수치는 교육용 가정입니다.</p></section>
         <section class="coach-card"><p class="eyebrow">READ THE CAR</p><h2 id="coach-title">먼저, 직진하며 제동해 보세요.</h2><p id="coach-text">앞쪽 하중이 늘어도 제동에 접지를 쓰고 있다면, 동시에 요구할 수 있는 회전력에는 한계가 있습니다.</p><div id="coach-action">실험 → 같은 속도에서 제동량만 바꿔 보기</div></section>
       </aside>
     </div>
     <section id="results" class="card results" hidden aria-live="polite"></section>
   </section>
   <section id="learn-page" hidden><div class="page-heading"><div><p class="eyebrow">UNDERSTAND BEFORE YOU PUSH</p><h1>감각에 이름을 붙이기.</h1><p class="intro">레이싱을 기반으로, 랠리와 드리프트까지. 예측하고 확인하는 짧은 훈련.</p></div></div><div id="lessons-root"></div></section>
+  <section id="guide-page" hidden><div class="page-heading"><div><p class="eyebrow">ULTIMATE PRACTICE & GUIDE / GROWING EDITION</p><h1>한 원리에서, 모든 종목으로.</h1><p class="intro">레이싱·랠리·드리프트·포뮬러. 개념 실험과 실제 심에서의 훈련을 연결합니다.</p></div></div><div id="guide-root"></div></section>
+  <section id="transfer-page" hidden><div class="page-heading"><div><p class="eyebrow">FROM THE LAB TO THE SIM</p><h1>실제 게임에서 검증하기.</h1><p class="intro">실제 랩 기록과 차량별 코너 노트를 쌓습니다. iRating을 추정하거나 달성을 보장하는 점수는 만들지 않습니다.</p></div></div><div id="transfer-root"></div></section>
   <section id="history-page" hidden><div class="page-heading"><div><p class="eyebrow">REPEATABILITY OVER A LUCKY LAP</p><h1>내가 반복할 수 있는 페이스.</h1><p class="intro">같은 조건의 기록을 비교하세요. 최고 기록 하나로 실력이 설명되지는 않습니다.</p></div><button class="btn" id="export">CSV 내보내기</button></div><div id="history-content"></div></section>
   <footer><span><b>INTS'Drive_to_Survive</b> / 이해 → 실험 → 반복 → 실제 심에서 확인</span><button class="text-btn" id="model-details">모델 범위와 사용법</button></footer>
 </main>
 <dialog id="model-dialog"><form method="dialog"><button class="icon-btn close-dialog" aria-label="닫기">×</button></form><p class="eyebrow">ABOUT THIS TRAINER</p><h2>차를 읽는 연습을 위한 작은 실험실.</h2><p>평면 차량 모델, 앞뒤 타이어의 횡력·종력 결합, 근사 하중 이동을 사용합니다. 교육용 모델이며 특정 게임이나 실제 차에 맞춰 검증한 모델은 아닙니다.</p><p>자동 전진 기어와 ABS에 가까운 제동을 가정합니다. 서스펜션 세부 운동, 캠버, 노면 요철, 점프, 타이어 열·마모, 연료 소모, 차동장치 세팅, 휠의 피드백은 재현하지 않습니다. 자갈은 낮은 접지의 근사이며 실제 랠리 노면 모델이 아닙니다. 전진 상태를 가정하므로 후진·완전한 스핀·90°를 넘는 차체 슬립은 재현 범위 밖입니다.</p><p>훈련 기록은 이 브라우저에만 저장됩니다. 반복 훈련은 짧은 코너를 같은 조건으로 재현하는 연습입니다. 실제 롱런에서의 타이어 관리·연료 변화·트래픽 판단까지 평가하지는 않습니다.</p><h3>실제 심으로 가져갈 때</h3><p>익숙한 차와 고정 셋업으로 한 코너를 고르세요. 입력 하나만 바꾸고 진입 속도, 브레이크 해제, 최소 속도, 탈출 시점을 비교하세요. 어느 구간에서 시간을 잃었는지 확인한 뒤 전체 랩으로 넓히세요.</p><p class="fineprint">시간은 시뮬레이션 시간입니다. 0.5× 기록은 관찰 연습으로 따로 구분됩니다. 추천 수치·접지 표시·진단은 이 모델 안에서만 해석하세요. 패드는 브라우저의 표준 Gamepad 매핑(왼쪽 스틱·LT·RT)을 사용하며 기기/브라우저에 따라 달라질 수 있습니다.</p></dialog>
 <div id="toast" role="status" hidden></div>
-<script src="physics.js"></script><script src="lessons.js"></script><script src="render.js"></script><script src="app.js"></script>
+<script src="physics.js"></script><script src="tracks.js"></script><script src="lessons.js"></script><script src="guide.js"></script><script src="transfer.js"></script><script src="render.js"></script><script src="app.js"></script>
 </body>
 </html>

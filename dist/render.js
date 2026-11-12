@@ -66,7 +66,7 @@
     const {ctx,w,h}=view,s=state||{},points=(scene&&scene.points)||[],roadWidth=number(scene&&scene.width,12);
     ctx.fillStyle=C.bg;ctx.fillRect(0,0,w,h);
     let scale,cx,cy;
-    if(options.follow){scale=w/90;cx=number(s.x);cy=number(s.y);}
+    if(options.follow){scale=w/Math.max(100,number(s.speed)*7);const lead=Math.min(65,number(s.speed)*1.2),direction=number(s.heading)+number(s.beta);cx=number(s.x)+Math.cos(direction)*lead;cy=number(s.y)+Math.sin(direction)*lead;}
     else{
       let minX=0,maxX=40,minY=0,maxY=20;
       if(points.length){minX=maxX=points[0].x;minY=maxY=points[0].y;for(const p of points){minX=Math.min(minX,p.x);maxX=Math.max(maxX,p.x);minY=Math.min(minY,p.y);maxY=Math.max(maxY,p.y);}}
@@ -74,11 +74,11 @@
       scale=Math.min(Math.max(30,w-54)/(maxX-minX+pad*2),Math.max(30,h-96)/(maxY-minY+pad*2));
       cx=(minX+maxX)/2;cy=(minY+maxY)/2;
     }
-    scale=Math.max(.2,number(scale,1));
+    scale=Math.max(.02,number(scale,1));
     const originX=w/2,originY=h/2+8;
     const toScreen=p=>({x:originX+(p.x-cx)*scale,y:originY-(p.y-cy)*scale});
     const x0=cx-originX/scale,x1=cx+(w-originX)/scale,y0=cy-(h-originY)/scale,y1=cy+originY/scale;
-    const grid=scale>6?10:20;
+    const grid=scale>6?10:scale>1?20:scale>.2?100:500;
     ctx.strokeStyle=C.grid;ctx.lineWidth=.6;
     ctx.beginPath();
     for(let x=Math.floor(x0/grid)*grid;x<=x1;x+=grid){const p=toScreen({x,y:0});ctx.moveTo(p.x,0);ctx.lineTo(p.x,h);}
@@ -91,7 +91,7 @@
     if(options.path!==false)line(ctx,screenPoints,'#6dd6eb65',1.3,[6,9]);
     if(points.length>1){
       gate(ctx,atDistance(points,0),roadWidth,toScreen,'#8fa7b5','START',false);
-      if(scene.preset!=='drift')gate(ctx,atDistance(points,number(scene.total,Infinity)),roadWidth,toScreen,'#bdcbd4','FINISH',true);
+      if(!['drift','figure8','playground'].includes(scene.preset))gate(ctx,atDistance(points,number(scene.total,Infinity)),roadWidth,toScreen,'#bdcbd4','FINISH',true);
       if(scene.preset==='corner'){
         gate(ctx,atDistance(points,45),roadWidth,toScreen,'#829ca9','진입 / 회전',false);
         gate(ctx,atDistance(points,110),roadWidth,toScreen,'#829ca9','회전 / 탈출',false);
@@ -107,16 +107,25 @@
     ctx.beginPath();ctx.moveTo(2.12*cs,-.69*cs);ctx.lineTo(1.72*cs,-.86*cs);ctx.lineTo(-1.9*cs,-.86*cs);ctx.lineTo(-2.15*cs,-.65*cs);ctx.lineTo(-2.15*cs,.65*cs);ctx.lineTo(-1.9*cs,.86*cs);ctx.lineTo(1.72*cs,.86*cs);ctx.lineTo(2.12*cs,.69*cs);ctx.closePath();ctx.fill();ctx.stroke();ctx.shadowBlur=0;
     ctx.fillStyle='#20342d';ctx.fillRect(.30*cs,-.61*cs,.74*cs,1.22*cs);ctx.fillStyle='#3f5c3a';ctx.fillRect(-1.20*cs,-.60*cs,.62*cs,1.2*cs);
     ctx.fillStyle='#ecffd3';ctx.fillRect(1.95*cs,-.65*cs,.15*cs,.37*cs);ctx.fillRect(1.95*cs,.28*cs,.15*cs,.37*cs);
-    for(const axle of [{x:1.18,front:true},{x:-1.47,front:false}])for(const side of [-1,1]){
-      ctx.save();ctx.translate(axle.x*cs,side*.91*cs);if(axle.front)ctx.rotate(-number(s.steer));ctx.fillStyle='#081015';ctx.strokeStyle='#72818a';ctx.lineWidth=.7;ctx.fillRect(-.42*cs,-.18*cs,.84*cs,.36*cs);ctx.strokeRect(-.42*cs,-.18*cs,.84*cs,.36*cs);ctx.restore();
+    for(const axle of [{x:number(s.params?.a,1.18),front:true},{x:-number(s.params?.b,1.47),front:false}])for(const side of [-1,1]){
+      ctx.save();ctx.translate(axle.x*cs,side*(number(s.params?.track,1.6)/2+.1)*cs);if(axle.front)ctx.rotate(-number(s.steer));ctx.fillStyle='#081015';ctx.strokeStyle='#72818a';ctx.lineWidth=.7;ctx.fillRect(-.42*cs,-.18*cs,.84*cs,.36*cs);ctx.strokeRect(-.42*cs,-.18*cs,.84*cs,.36*cs);ctx.restore();
     }
     ctx.restore();
     arrow(ctx,p.x,p.y,-heading,clamp(cs*7,25,51),C.lime,1.9);
     if(number(s.speed)>.5)arrow(ctx,p.x,p.y,-heading-number(s.beta),clamp(cs*6+number(s.speed)*.3,24,62),C.cyan,1.6);
     if(p.x<0 || p.x>w || p.y<0 || p.y>h){label(ctx,'차량이 화면 밖입니다 · ⌖ 추적 카메라',w/2,h-55,C.coral);}
-    const meters=scale>5?10:20,len=meters*scale,barX=w-24-len,barY=h-22;
+    const meters=scale>5?10:scale>1?20:scale>.2?100:500,len=meters*scale,barX=w-24-len,barY=h-22;
     line(ctx,[{x:barX,y:barY-3},{x:barX,y:barY},{x:barX+len,y:barY},{x:barX+len,y:barY-3}],'#708795',1);
     ctx.fillStyle='#708795';ctx.font='9px ui-monospace, monospace';ctx.textAlign='center';ctx.fillText(`${meters} m`,barX+len/2,barY-7);
+    if(scene.total>700&&options.follow&&points.length>2){
+      const mw=140,mh=92,mx=w-mw-16,my=h-mh-48;
+      let loX=Infinity,hiX=-Infinity,loY=Infinity,hiY=-Infinity;for(const t of points){loX=Math.min(loX,t.x);hiX=Math.max(hiX,t.x);loY=Math.min(loY,t.y);hiY=Math.max(hiY,t.y);}
+      const ms=Math.min((mw-16)/Math.max(1,hiX-loX),(mh-16)/Math.max(1,hiY-loY)),ox=mx+mw/2,oy=my+mh/2;
+      const mini=t=>({x:ox+(t.x-(loX+hiX)/2)*ms,y:oy-(t.y-(loY+hiY)/2)*ms});
+      ctx.fillStyle='#081117dc';ctx.fillRect(mx,my,mw,mh);ctx.strokeStyle='#344550';ctx.lineWidth=.7;ctx.strokeRect(mx,my,mw,mh);line(ctx,points.map(mini),'#829ba9',1.3);
+      const mp=mini(s);ctx.beginPath();ctx.arc(mp.x,mp.y,3,0,Math.PI*2);ctx.fillStyle=C.lime;ctx.fill();
+      const next=(scene.corners||[]).find(c=>c.s>number(options.progress)+5);if(next)label(ctx,next.name+' · 모델 거리 '+Math.round(next.s-number(options.progress))+' m',w/2,22,C.cyan);
+    }
   }
   function grip(canvas,state){
     const view=surface(canvas);if(!view)return;
@@ -145,7 +154,7 @@
     for(const fraction of [0,.5,1]){const y=bottom-fraction*ph;line(ctx,[{x:left,y},{x:right,y}],'#253945',.7,[2,4]);ctx.fillStyle='#6f8999';ctx.fillText(`${Math.round(fraction*100)}`,left-6,y);}
     ctx.textAlign='center';
     for(let i=0;i<=4;i++){const x=left+pw*i/4;line(ctx,[{x,y:top},{x,y:bottom}],'#1c303c',.6);ctx.fillStyle='#6f8999';ctx.fillText(`${Math.round(start+i*3)}s`,x,h-5);}
-    const series=[{field:'speed',color:'#b4c1ca',value:s=>number(s.speed)*3.6/120},{field:'throttle',color:C.lime,value:s=>number(s.throttle)},{field:'brake',color:C.coral,value:s=>number(s.brake)},{field:'steer',color:C.cyan,value:s=>Math.abs(number(s.steer))}];
+    const series=[{field:'speed',color:'#b4c1ca',value:s=>number(s.speed)*3.6/240},{field:'throttle',color:C.lime,value:s=>number(s.throttle)},{field:'brake',color:C.coral,value:s=>number(s.brake)},{field:'steer',color:C.cyan,value:s=>Math.abs(number(s.steer))}];
     const visible=data.filter(s=>Number.isFinite(s.t) && s.t>=start && s.t<=end);
     ctx.save();ctx.beginPath();ctx.rect(left,top,pw,ph);ctx.clip();
     for(const item of series){const pts=visible.map(s=>({x:left+(s.t-start)/12*pw,y:bottom-clamp(item.value(s),0,1)*ph}));line(ctx,pts,item.color,item.field==='speed'?1.1:1.5);}
