@@ -2,6 +2,7 @@
 (function () {
   'use strict';
   const storageKey = 'intsTrainingProgressV1';
+  const revisedCircuitIds = ['monza_t1','monza_lesmo','nurb_t1','whole_monza'];
   const mounted = new WeakMap();
   const instances = new Set();
   const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -38,7 +39,11 @@
   function readProgress() {
     try {
       const value = JSON.parse(localStorage.getItem(storageKey) || '{}');
-      return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+      if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+      // Geometry and objectives changed in v0.5. Retain stored history while
+      // counting only results earned under the current circuit conditions.
+      for (const id of revisedCircuitIds) if (value[id]?.sceneVersion !== 'v05') delete value[id];
+      return value;
     } catch (_) { return {}; }
   }
   function statusFor(record) {

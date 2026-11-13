@@ -5,15 +5,15 @@
 (function(root){
   'use strict';
   const NOTE='이 앱의 교육용 모델에서 연습하는 기준입니다. 실제 게임의 제동 지점·권장 속도·최적 기록이 아닙니다.';
-  const targets={corner_release:[32,45],monza_t1:[24,38],monza_lesmo:[40,60],nurb_t1:[25,40],rally_hairpin:[18,28]};
+  const targets={corner_release:[32,45],monza_t1:[65,85],monza_lesmo:[95,125],nurb_t1:[65,85],rally_hairpin:[18,28]};
   const releases={corner_release:.35,monza_t1:.3,nurb_t1:.35,rally_hairpin:.3};
-  const demoSpeeds={intro_brake:0,corner_release:38,monza_t1:30,monza_lesmo:50,nurb_t1:32,rally_hairpin:23,drift_circle_intro:28,whole_monza:65};
+  const demoSpeeds={intro_brake:0,corner_release:38,monza_t1:75,monza_lesmo:110,nurb_t1:75,rally_hairpin:23,drift_circle_intro:28,whole_monza:65};
   const finishCriteria={
     intro_brake:'직선에서 브레이크로 정지 · 도로 밖 0.2초 이하',
     corner_release:'회전 시작 32–45 km/h · 브레이크 35% 이하 · 구간 완주',
-    monza_t1:'첫 회전 24–38 km/h · 브레이크 30% 이하 · 시케인 완주',
-    monza_lesmo:'진입 40–60 km/h보다 높은 탈출 속도 · 가속·제동 겹침 0.4초 이하',
-    nurb_t1:'진입 25–40 km/h · 브레이크 35% 이하 · 헤어핀 완주',
+    monza_t1:'첫 회전 65–85 km/h · 브레이크 30% 이하 · 시케인 완주',
+    monza_lesmo:'진입 95–125 km/h보다 높은 탈출 속도 · 가속·제동 겹침 0.4초 이하',
+    nurb_t1:'진입 65–85 km/h · 브레이크 35% 이하 · 헤어핀 완주',
     rally_hairpin:'진입 18–28 km/h · 브레이크 30% 이하 · 헤어핀 완주',
     drift_circle_intro:'최고 40 km/h 이하 · 최대 슬립각 15° 이하 · 원 경로 완주',
     whole_monza:'한 바퀴 완주 · 도로 밖 1초 이하'
@@ -32,24 +32,24 @@
       steps:['주황 제동 표지에서 감속을 시작합니다.','회전 표지에서 32–45 km/h, 브레이크 35% 이하를 목표로 합니다.','코너 끝이 보이면 조향을 줄이고 W / ↑로 가속합니다.'],
       successText:'감속한 뒤 브레이크를 놓고 회전했어요.',focusMetric:'회전 시작의 브레이크',recordLabel:'회전 시작 속도',metricKey:'entrySpeed',nextId:'monza_t1',
       runningHints:['주황 표지에서 감속 · 회전 전 32–45 km/h','브레이크를 놓고 A / ← · 조향을 조금씩 조절하세요.','조향을 풀며 W / ↑ · 완주보다 입력 순서를 기억하세요.']},
-    {id:'monza_t1',title:'몬자 T1 · 첫 시케인',shortGoal:'시케인 전에 24–38 km/h로 줄이고 두 회전을 연결하세요.',why:'몬자 전체를 외우기 전에 첫 시케인만 떼어 연습합니다. 진입 속도를 낮춘 뒤 오른쪽, 왼쪽 방향 전환을 차례로 처리합니다.',
-      category:'circuit',vehicle:'gt3',preset:'monza',surface:'dry',aids:'default',startSpeedKph:70,durationLabel:'약 40초',
+    {id:'monza_t1',title:'몬자 T1 · 첫 시케인',shortGoal:'250 km/h 고속 접근에서 65–85 km/h로 줄이고 시케인을 연결하세요.',why:'첫 시케인에 GT3 고속 접근을 가정해 연습합니다. 250 km/h는 연습 조건이며 실제 차량·게임별 측정값은 아닙니다. 진입 속도를 낮춘 뒤 오른쪽, 왼쪽 방향 전환을 차례로 처리합니다.',
+      category:'circuit',vehicle:'gt3',preset:'monza',surface:'dry',aids:'default',startSpeedKph:250,durationLabel:'약 20초',
       inputHint:'S로 감속 → D / → 첫 회전 → A / ← 두 번째 회전.',
-      steps:['짧은 직선에서 제동 표지를 찾아 감속합니다.','회전 표지의 24–38 km/h를 확인하고 브레이크를 놓습니다.','오른쪽·왼쪽을 연결해 초록 탈출 표지까지 도로 안에 머뭅니다.'],
+      steps:['250 km/h로 접근합니다. 200·150·100 m 거리판을 보며 강하게 감속합니다.','회전 표지의 65–85 km/h를 확인하고 브레이크를 놓습니다.','오른쪽·왼쪽을 연결해 초록 탈출 표지까지 도로 안에 머뭅니다.'],
       successText:'첫 시케인을 낮은 진입 속도로 연결했어요.',focusMetric:'시케인 진입 속도',recordLabel:'첫 회전 진입 속도',metricKey:'entrySpeed',nextId:'monza_lesmo',
-      runningHints:['제동 표지를 보고 감속 · 첫 회전 24–38 km/h','D / → 다음 A / ← · 시케인 사이에서 가속을 서두르지 마세요.','차가 직선을 향하면 조향을 풀고 가속하세요.']},
-    {id:'monza_lesmo',title:'몬자 레스모 1 · 탈출 가속',shortGoal:'앞선 로지아 구간을 지나 레스모에 40–60 km/h로 진입하고 탈출 가속하세요.',why:'로지아 일부를 포함한 연결 진입 구간에서 시작합니다. 레스모 우회전의 감속과 가속 입력을 분리하고 진입·탈출 속도를 비교합니다.',
-      category:'circuit',vehicle:'gt3',preset:'monza',surface:'dry',aids:'default',startSpeedKph:70,durationLabel:'약 25초',
+      runningHints:['제동 표지를 보고 감속 · 첫 회전 65–85 km/h','D / → 다음 A / ← · 시케인 사이에서 가속을 서두르지 마세요.','차가 직선을 향하면 조향을 풀고 가속하세요.']},
+    {id:'monza_lesmo',title:'몬자 레스모 1 · 탈출 가속',shortGoal:'앞선 로지아 구간을 지나 레스모에 95–125 km/h로 진입하고 탈출 가속하세요.',why:'로지아 일부를 포함한 연결 진입 구간에서 시작합니다. 레스모 우회전의 감속과 가속 입력을 분리하고 진입·탈출 속도를 비교합니다.',
+      category:'circuit',vehicle:'gt3',preset:'monza',surface:'dry',aids:'default',startSpeedKph:70,approachSpeedKph:160,durationLabel:'약 20초',
       inputHint:'S로 감속 → D / →로 회전 → 브레이크를 놓고 W / ↑.',
-      steps:['앞선 로지아 구간을 지나 레스모 회전 표지에서 40–60 km/h가 되도록 감속합니다.','D / →로 우회전하며 다음 탈출 구간을 봅니다.','브레이크와 가속을 겹치지 않고 탈출 속도를 진입보다 높입니다.'],
+      steps:['앞선 로지아 구간을 지나 레스모 회전 표지에서 95–125 km/h가 되도록 감속합니다.','D / →로 우회전하며 다음 탈출 구간을 봅니다.','브레이크와 가속을 겹치지 않고 탈출 속도를 진입보다 높입니다.'],
       successText:'브레이크와 가속을 분리해 탈출했어요.',focusMetric:'진입 대비 탈출 속도',recordLabel:'탈출 속도',metricKey:'exitSpeed',nextId:'nurb_t1',
-      runningHints:['회전 전 40–60 km/h · 주황 표지부터 준비하세요.','D / →로 우회전 · 브레이크를 놓고 가속을 준비하세요.','W / ↑로 가속 · 탈출 속도를 진입보다 높여 보세요.']},
-    {id:'nurb_t1',title:'뉘르부르크링 GP · T1 헤어핀',shortGoal:'25–40 km/h로 진입해 긴 우회전을 도로 안에서 마치세요.',why:'헤어핀에서는 첫 회전 뒤에도 길이 계속 돌아갑니다. 낮은 진입 속도를 만든 뒤 출구가 열릴 때까지 조향을 유지하는 연습입니다.',
-      category:'circuit',vehicle:'gt3',preset:'nurbgp',surface:'dry',aids:'default',startSpeedKph:65,durationLabel:'약 35초',
+      runningHints:['회전 전 95–125 km/h · 주황 표지부터 준비하세요.','D / →로 우회전 · 브레이크를 놓고 가속을 준비하세요.','W / ↑로 가속 · 탈출 속도를 진입보다 높여 보세요.']},
+    {id:'nurb_t1',title:'뉘르부르크링 GP · T1 헤어핀',shortGoal:'65–85 km/h로 진입해 긴 우회전을 도로 안에서 마치세요.',why:'헤어핀에서는 첫 회전 뒤에도 길이 계속 돌아갑니다. 낮은 진입 속도를 만든 뒤 출구가 열릴 때까지 조향을 유지하는 연습입니다.',
+      category:'circuit',vehicle:'gt3',preset:'nurbgp',surface:'dry',aids:'default',startSpeedKph:230,durationLabel:'약 20초',
       inputHint:'S로 충분히 감속 → D / →를 조절하며 긴 우회전.',
-      steps:['직선에서 미리 감속해 회전 표지에서 25–40 km/h를 만듭니다.','브레이크를 줄이고 D / →로 긴 회전을 따라갑니다.','출구가 보이면 조향을 풀며 가속해 끝까지 이어갑니다.'],
+      steps:['230 km/h 접근에서 강하게 감속해 회전 표지에 65–85 km/h로 도착합니다.','브레이크를 줄이고 D / →로 긴 회전을 따라갑니다.','출구가 보이면 조향을 풀며 가속해 끝까지 이어갑니다.'],
       successText:'낮은 진입 속도로 T1 헤어핀을 마쳤어요.',focusMetric:'헤어핀 진입 속도',recordLabel:'T1 진입 속도',metricKey:'entrySpeed',nextId:'rally_hairpin',
-      runningHints:['회전 전 25–40 km/h · 직선에서 속도를 먼저 줄이세요.','긴 우회전입니다 · D / →를 조금씩 조절하세요.','출구 방향이 열리면 조향을 풀며 가속하세요.']},
+      runningHints:['회전 전 65–85 km/h · 직선에서 속도를 먼저 줄이세요.','긴 우회전입니다 · D / →를 조금씩 조절하세요.','출구 방향이 열리면 조향을 풀며 가속하세요.']},
     {id:'rally_hairpin',title:'랠리 · 저속 헤어핀',shortGoal:'자갈길 회전 전에 18–28 km/h로 감속하세요.',why:'낮은 접지에서는 가속이나 핸드브레이크보다 진입 속도부터 익힙니다. 가상 헤어핀 하나에서 감속 → 회전 → 탈출 순서를 반복합니다.',
       category:'rallydrift',vehicle:'rally1',preset:'hairpin',surface:'gravel',aids:'default',startSpeedKph:40,durationLabel:'약 35초',
       inputHint:'S로 일찍 감속 → A / ←로 좌회전. 이번에는 E를 쓰지 마세요.',
@@ -63,7 +63,7 @@
       successText:'크게 미끄러지지 않고 원 선회를 마쳤어요.',focusMetric:'낮은 속도와 작은 슬립각',recordLabel:'최대 차체 슬립각',metricKey:'peakBeta',nextId:'whole_monza',
       runningHints:['A / ←를 조금씩 조절 · 40 km/h 이하','원을 따라가세요 · W / ↑는 속도가 떨어질 때만 짧게','마지막까지 원을 유지하세요 · 드리프트 점수는 매기지 않습니다.']},
     {id:'whole_monza',title:'몬자 GP · 한 바퀴 연결',shortGoal:'연습한 구간을 포함해 몬자 한 바퀴를 도로 안에서 마치세요.',why:'구간 연습을 한 바퀴로 연결합니다. 이번 목표는 코스 순서와 완주이며 빠른 랩타임이나 실제 게임 실력은 판정하지 않습니다.',
-      category:'circuit',vehicle:'gt3',preset:'monza',surface:'dry',aids:'default',startSpeedKph:70,durationLabel:'약 4–7분',
+      category:'circuit',vehicle:'gt3',preset:'monza',surface:'dry',aids:'default',startSpeedKph:70,durationLabel:'약 2–4분',
       inputHint:'코너 이름과 미니맵을 보며 미리 감속하세요. 서두르지 않아도 됩니다.',
       steps:['T1에서 배운 감속 → 방향 전환 순서를 사용합니다.','다음 코너 이름을 보고 일찍 준비하며 한 바퀴를 연결합니다.','완주 후 이탈 시간과 주행 시간을 다음 시도의 기준으로 남깁니다.'],
       successText:'몬자 한 바퀴를 도로 안에서 연결했어요.',focusMetric:'한 바퀴 완주',recordLabel:'한 바퀴 주행 시간',metricKey:'time',nextId:'monza_t1',
@@ -109,12 +109,12 @@
   function scene(id){
     const m=get(id);if(!m)return null;
     let s,entry,exit,brake;
-    if(id==='monza_t1'){s=segment('monza','rettifilo',300,165);brake=150;entry=220;exit=420;}
+    if(id==='monza_t1'){s=segment('monza','rettifilo',500,165);brake=245;entry=420;exit=620;}
     else if(id==='monza_lesmo'){s=segment('monza','lesmo1',320,145);brake=155;entry=210;exit=380;}
-    else if(id==='nurb_t1'){s=segment('nurbgp','t1',300,170);brake=140;entry=225;exit=415;}
+    else if(id==='nurb_t1'){s=segment('nurbgp','t1',500,170);brake=275;entry=425;exit=615;}
     else if(id==='whole_monza'){
       const parent=root.GripTracks?.get('monza');if(!parent)return null;s={...parent,parentTrack:'monza',parentStartS:0,parentEndS:parent.total};
-      entry=parent.turnInReferences.find(ref=>ref.cornerId==='rettifilo').s;exit=parent.corners.at(-1).s+140;brake=entry-80;
+      entry=parent.turnInReferences.find(ref=>ref.cornerId==='rettifilo').s;exit=parent.corners.at(-1).s+140;brake=entry-350;
     }else{
       s=synthetic(id);
       if(id==='intro_brake'){brake=18;entry=55;exit=120;}

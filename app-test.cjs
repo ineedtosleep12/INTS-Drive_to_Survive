@@ -43,7 +43,7 @@ function harness(saved=[],options={}){
     setPointerCapture(){}
     showModal(){this.open=true;}
     focus(){}
-    scrollIntoView(){}
+    scrollIntoView(){(sim.scrolls??=[]).push(this.id);}
   }
   function register(markup,parent){
     for(const match of markup.matchAll(/<([a-z][a-z0-9-]*)\b([^>]*\bid="([^"]+)"[^>]*)>/gi)){
@@ -86,7 +86,7 @@ function harness(saved=[],options={}){
     if(options.tracks)context.GripTracks=options.tracks;
   }
   context.GripPhysics={...realPhysics,create(opts){sim.createOptions={...opts};return sim.last=realPhysics.create(opts);},step(state,controls,dt,opts){sim.calls.push({controls:{...controls},dt,options:{...opts}});if(options.dynamics)realPhysics.step(state,controls,dt,opts);else state.time+=dt;sim.onstep?.(state,controls,dt,opts);}};
-  context.GripRenderer={...renderer,track(canvas,state,scene,opts){sim.scene=scene;sim.renderOptions=opts;renderer.track(canvas,state,scene,opts);}};
+  context.GripRenderer={...renderer,track(canvas,state,scene,opts){sim.scene=scene;sim.renderOptions=opts;if(canvas.id==='track')sim.drivingView={...state};renderer.track(canvas,state,scene,opts);}};
   vm.runInContext(appSource,context,{filename:'app.js'});let now=1;
   const tick=(patch={},dt=50)=>{Object.assign(sim.last,patch);now+=dt;const frame=frames.shift();assert(frame,'animation frame scheduled');frame(now);};
   const navigate=name=>page.find(p=>p.dataset.page===name).click();
@@ -179,7 +179,7 @@ guided.el('play').click();guided.key('keydown','KeyS');for(let i=0;i<200&&guided
 assert.equal(guided.records().length,1);assert.equal(guided.records()[0].reason,'stop');assert.equal(JSON.parse(guided.storage.get('intsTrainingProgressV1')).intro_brake.passed,true);assert(guided.el('review-time'));
 const persisted=guided.storage.get('intsTrainingProgressV1');guided.sim.academy.onObserve('intro_brake');for(let i=0;i<200&&guided.el('results').hidden;i++)guided.tick();
 assert.equal(guided.records().length,1,'auto demo never saves a driving record');assert.equal(guided.storage.get('intsTrainingProgressV1'),persisted,'auto demo never changes progress');
-guided.sim.academy.onStart('monza_t1');guided.tick();assert.equal(guided.sim.scene.parentTrack,'monza');assert(guided.sim.scene.total<500);assert.equal(guided.el('results').hidden,true);guided.navigate('lab');assert.equal(guided.el('mission-panel').hidden,true);assert.equal(guided.el('preset').disabled,false);
+guided.sim.academy.onStart('monza_t1');guided.tick();assert.equal(guided.sim.scene.parentTrack,'monza');assert(guided.sim.scene.total<800);assert.equal(guided.el('results').hidden,true);guided.navigate('lab');assert.equal(guided.el('mission-panel').hidden,true);assert.equal(guided.el('preset').disabled,false);
 for(const id of ['intro_brake','corner_release','monza_t1','monza_lesmo','nurb_t1','rally_hairpin','drift_circle_intro','whole_monza']){
   const demo=harness([],{modules:true,dynamics:true,fast:true});demo.sim.academy.onObserve(id);
   for(let i=0;i<14000&&demo.el('results').hidden;i++)demo.tick();
@@ -214,10 +214,47 @@ replay.sim.academy.onStart('corner_release');assert.equal(replay.el('results').h
 const releaseFail=harness([],{modules:true,fast:true});releaseFail.sim.academy.onStart('monza_t1');releaseFail.input('mouse');releaseFail.el('play').click();releaseFail.tick();
 const releaseScene=releaseFail.sim.scene;
 for(const p of releaseScene.points.slice(1)){
-  releaseFail.el('brake-range').value=p.s<=releaseScene.gates.entry+3?'.8':'0';releaseFail.el('brake-range').oninput();releaseFail.tick({x:p.x,y:p.y,speed:30/3.6,time:releaseFail.sim.last.time+.15});
+  releaseFail.el('brake-range').value=p.s<=releaseScene.gates.entry+20?'.8':'0';releaseFail.el('brake-range').oninput();releaseFail.tick({x:p.x,y:p.y,speed:75/3.6,time:releaseFail.sim.last.time+.15});
 }
 const releaseRecord=releaseFail.records()[0];assert.equal(releaseRecord.reason,'finish');assert.equal(releaseRecord.offTime,0);assert(releaseRecord.trainingMetrics.brakeAtEntry>.3);assert(Number(releaseFail.el('review-time').max)<releaseRecord.time-2,'failed release focuses entry instead of clean finish');assert(Math.abs(Number(releaseFail.el('review-time').max)-(releaseRecord.sectors[0]+2))<.2);
 const early=harness([],{modules:true,dynamics:true,fast:true});early.sim.academy.onStart('monza_lesmo');early.el('play').click();for(let i=0;i<2000&&early.el('results').hidden;i++)early.tick();assert.equal(early.el('jump-turn_direction').disabled,false,'an earlier reachable steering event remains available');
 console.log('PASS replay integration: slow/normal clocks, pause, step, range/loop end, distance jumps, blur/navigation pause, live-state and score isolation, and retry clearing.');
 console.log('PASS guided launch, first braking with real keyboard input, measured progress, auto-demo isolation, circuit segment selection, retry clearing and free-mode return.');
+
+// Repeated corners restore physical state and never become complete-lap records.
+const loop=harness([],{modules:true,dynamics:true,fast:true,home:true});
+loop.sim.academy.onStart('corner_release');loop.el('play').click();
+for(let i=0;i<600&&loop.el('results').hidden;i++)loop.tick();
+loop.key('keyup','KeyW');assert(!loop.el('results').hidden,'coasting straight through corner produces a result');
+assert(!loop.el('result-dock').hidden,'failure opens side panel');assert(!loop.sim.scrolls.includes('results'),'finish must not scroll away from driving');
+assert.equal(loop.sim.drivingView.x,loop.sim.last.x,'failure does not rewind main driving view automatically');
+const originalRecords=loop.records().length,originalProgress=loop.storage.get('intsTrainingProgressV1');
+assert(loop.el('retry-corner'),'failed corner offers checkpoint retry');loop.el('retry-corner').click();
+assert(loop.el('result-dock').hidden);assert(!loop.el('retry-strip').hidden);assert(loop.el('start-speed').disabled);
+const checkpoint={...loop.sim.last},checkpointFields=['x','y','heading','vx','vy','yawRate','steer','_loadAx','_loadAy','_tcFactor'];
+assert.equal(checkpoint.time,0);assert(checkpoint.x>0,'checkpoint advances past original mission start');
+const callsBeforeCountdown=loop.sim.calls.length;for(let i=0;i<20;i++)loop.tick();assert.equal(loop.sim.calls.length,callsBeforeCountdown,'countdown holds physics');
+loop.key('keydown','KeyW');
+for(let i=0;i<700&&loop.el('results').hidden;i++)loop.tick();loop.key('keyup','KeyW');
+assert(!loop.el('results').hidden);assert.equal(loop.records().length,originalRecords,'partial repetition excluded from history');
+assert.equal(loop.storage.get('intsTrainingProgressV1'),originalProgress,'partial repetition excluded from full mission progress');
+assert(loop.el('results').innerHTML.includes('CORNER LOOP'));assert(loop.el('retry-comparison-chart'),'previous attempt input comparison');
+loop.el('retry-corner').click();for(const k of checkpointFields)assert.equal(loop.sim.last[k],checkpoint[k],'fixed retry physical state '+k);
+loop.fireWindow('blur');const blurCalls=loop.sim.calls.length;for(let i=0;i<45;i++)loop.tick();assert.equal(loop.sim.calls.length,blurCalls,'blur cancels retry countdown');
+loop.el('retry-full').click();assert(loop.el('retry-strip').hidden);assert.equal(loop.sim.last.time,0);assert.equal(loop.sim.last.x,loop.sim.scene.points[0].x);
+// Explicit replay can be closed without moving the driving camera or deleting results.
+const dock=harness([],{modules:true,dynamics:true,fast:true,home:true});dock.sim.academy.onStart('corner_release');dock.el('play').click();dock.key('keydown','KeyW');
+for(let i=0;i<600&&dock.el('results').hidden;i++)dock.tick();dock.el('review-play').click();dock.tick();dock.el('close-results').click();dock.tick();
+assert(dock.el('result-dock').hidden);assert.equal(dock.sim.drivingView.x,dock.sim.last.x);dock.el('open-results').click();assert(!dock.el('result-dock').hidden);
+console.log('PASS corner retry integration: fixed complete checkpoint, countdown/blur, retained driving view, result dock, previous attempt comparison and full-record isolation.');
+const oldScene=structuredClone(good);delete oldScene.config.sceneVersion;
+const sceneMigration=harness([oldScene]);sceneMigration.complete();assert(!sceneMigration.el('results').innerHTML.includes('이전 최고 대비'),'older course version must not rank against new geometry');
+const circuitGuide=harness([],{modules:true,dynamics:true,fast:true,home:true});circuitGuide.sim.academy.onStart('monza_t1');
+assert.equal(circuitGuide.sim.last.speed*3.6,250,'T1 requested high-speed approach');
+assert(!circuitGuide.el('corner-guide').hidden);assert(circuitGuide.el('corner-guide-body').innerHTML.includes('접근'));
+circuitGuide.el('corner-guide-transfer').click();assert(circuitGuide.el('transfer-root').innerHTML.includes('tr-note-approachSpeed'),'guide opens actual-simulator speed notes');
+assert.equal(circuitGuide.el('tr-note-track').value,'monza');
+circuitGuide.navigate('lab');circuitGuide.change('preset','nurbgp');assert(!circuitGuide.el('corner-guide').hidden);
+assert(circuitGuide.el('corner-guide-body').innerHTML.includes('연결 코너'));
+console.log('PASS circuit guide integration: 250 km/h approach, complete corner-region model speeds, empirical speed notes and scene-version isolation.');
 

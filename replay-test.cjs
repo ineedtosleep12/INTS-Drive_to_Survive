@@ -113,10 +113,50 @@ for(const mission of T.missions){
       const entry=scene.gates.entry;
       const releases=measured.events.filter(e=>e.type==='brake_release'&&e.s>=Math.max(0,entry-100)&&e.s<entry);
       assert.ok(releases.length,mission.id+' '+dt+'s has a sustained brake release in the last 100 m before entry');
-      const release=releases.at(-1),start=measured.events.find(e=>e.type==='brake_start'&&e.s>=Math.max(0,entry-100)&&e.s<release.s);
+      const release=releases.at(-1),start=measured.events.find(e=>e.type==='brake_start'&&e.s>=Math.max(0,entry-(mission.category==='circuit'?250:100))&&e.s<release.s);
       assert.ok(start&&start.brake>=.18&&release.brake<=.08,mission.id+' actual significant braking precedes release');
       assert.ok(release.s>entry-35,mission.id+' release is near turn-in, not a whole-approach slow cruise');
     }
   }
 }
-console.log('Replay checks passed: all 8 measured objectives at 16.7/50ms, real near-corner brake releases, deterministic config/scene isolation, bounded demos, distance/angle interpolation and sustained input comparisons.');
+// High-speed guided approaches must actually start at the requested speed and
+// brake before the distance boards, rather than silently becoming low-speed laps.
+const highScene=T.scene('monza_t1'),high=Replay.generate(highScene,T.get('monza_t1'));
+close(high.trace[0].speed,250);assert.equal(T.get('nurb_t1').startSpeedKph,230);
+const firstBraking=high.events.find(e=>e.type==='brake_start');
+assert.ok(firstBraking&&highScene.gates.entry-firstBraking.s>=100&&highScene.gates.entry-firstBraking.s<=210,'sustained high-speed braking occurs in the approach, around the 150 m reference');
+assert.ok(highScene.landmarks[0].s<firstBraking.s,'preparation cue precedes actual example braking');
+assert.ok(firstBraking.t>=2.5,'high-speed start provides time to see the road before braking');
+const nurbHigh=Replay.generate(T.scene('nurb_t1'),T.get('nurb_t1'));
+assert.ok(nurbHigh.events.find(e=>e.type==='brake_start').t>=2.5,'Nurburgring high-speed start also provides a preparation runway');
+// Every circuit corner region gets measured approach/entry/minimum/exit values;
+// these are generated physical runs, not hard-coded real-world or fastest speeds.
+for(const trackId of ['monza','nurbgp']){
+  const scene=GripTracks.get(trackId);let gt3=null,ae86=null;
+  for(const vehicle of Object.keys(Physics.vehicles)){
+    const run=Replay.generate(scene,null,{vehicle,surface:'dry',startSpeed:vehicle==='gt3'?250:80});
+    assert.ok(run.complete,trackId+' '+vehicle+' reference completes');
+    assert.ok(run.trace.every(p=>!p.off),trackId+' '+vehicle+' stays within road');
+    const guide=Replay.cornerGuide(scene,run);
+    assert.equal(guide.length,scene.corners.length,trackId+' all named corner regions covered');
+    assert.deepEqual(guide.map(r=>r.id),scene.corners.map(c=>c.id));
+    for(const row of guide){
+      assert.equal(row.available,true);assert.equal(row.modelOnly,true);assert.match(row.definition,/400 m.*120 m.*연결 코너/);assert.match(row.note,/실제 게임.*보정하지/);
+      for(const key of ['approachSpeed','entrySpeed','minSpeed','exitSpeed'])assert.ok(Number.isFinite(row[key])&&row[key]>=0&&row[key]<=270,trackId+' '+vehicle+' '+row.id+' '+key);
+      assert.ok(row.approachS<row.entryS&&row.entryS<row.exitS&&row.exitS<=scene.total);
+      close(row.entrySpeed,Replay.atDistance(run.trace,row.entryS).speed);
+      close(row.exitSpeed,Replay.atDistance(run.trace,row.exitS).speed);
+      assert.ok(row.minSpeed<=row.entrySpeed&&row.minSpeed<=row.exitSpeed);
+      assert.ok(row.brakeDistance===null||row.brakeDistance>=0&&row.brakeDistance<=400);
+    }
+    if(vehicle==='gt3')gt3=guide;if(vehicle==='ae86')ae86=guide;
+  }
+  assert.notDeepEqual(gt3.map(r=>r.approachSpeed),ae86.map(r=>r.approachSpeed),'different vehicle dynamics produce different measured guides');
+  const unavailable=Replay.cornerGuide(scene,{complete:false,trace:high.trace,events:high.events});
+  assert.ok(unavailable.every(r=>!r.available&&r.entrySpeed===null&&r.exitSpeed===null),'failed/incomplete examples never supply purported complete corner targets');
+}
+assert.deepEqual(Replay.cornerGuide(T.scene('rally_hairpin'),high),[],'circuit guide is not fabricated for unrelated paths');
+const lesmoScene=T.scene('monza_lesmo'),lesmoGuide=Replay.cornerGuide(lesmoScene,Replay.generate(lesmoScene,T.get('monza_lesmo')));
+assert.equal(lesmoGuide.find(r=>r.id==='roggia').available,false,'a clipped upstream corner without its entry reference is not presented as a measured full region');
+assert.equal(lesmoGuide.find(r=>r.id==='lesmo1').exitS,lesmoScene.gates.exit,'individual mission guide uses the same exit as mission scoring');
+console.log('Replay checks passed: all 8 measured objectives at 16.7/50ms, 250 km/h approach, 16 vehicle/circuit runs without departures, measured corner-region guides, deterministic isolation and distance-aligned comparisons.');

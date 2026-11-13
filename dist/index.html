@@ -11,7 +11,7 @@
 <body>
 <header class="topbar">
   <a class="brand" href="#home" aria-label="INTS Drive to Survive 연습 시작"><span class="brand-mark">//</span> INTS'<span>DRIVE</span><small>TO SURVIVE · LEARNING LAB</small></a>
-  <div class="top-meta"><span class="status-dot"></span> 가벼운 브라우저 훈련 <span class="version">BUILD 0.4</span></div>
+  <div class="top-meta"><span class="status-dot"></span> 가벼운 브라우저 훈련 <span class="version">BUILD 0.5</span></div>
 </header>
 <nav class="tabs" aria-label="훈련 메뉴">
   <button data-page="home" class="active" aria-current="page"><span>01</span> 연습 시작</button>
@@ -46,19 +46,19 @@
       <div><label for="preset">연습 장면</label><select id="preset"><optgroup label="기초 실험"><option value="corner">레이싱 · 90° 코너</option><option value="brake">기초 · 직선 제동</option><option value="slalom">랠리 입문 · 슬라럼</option><option value="hairpin">랠리 · 헤어핀</option><option value="drift">드리프트 · 원돌이 경로</option><option value="figure8">드리프트 · 8자 전환</option></optgroup><optgroup label="종합 연습 · 평면 근사"><option value="monza">Monza · 학습용 레이아웃</option><option value="nurbgp">Nürburgring GP · 학습용 레이아웃</option><option value="rally_stage">랠리 · 짧은 가상 스테이지</option><option value="playground">드리프트 · 플레이그라운드</option><option value="touge">드리프트 · 짧은 가상 토우게</option></optgroup></select></div>
       <div><label for="surface">노면</label><select id="surface"><option value="dry">마른 아스팔트</option><option value="wet">젖은 아스팔트</option><option value="gravel">자갈 · 낮은 접지</option></select></div>
       <div><label for="drive">구동</label><select id="drive"><option value="rwd">후륜 · RWD</option><option value="fwd">전륜 · FWD</option><option value="awd">사륜 · AWD</option></select></div>
-      <div class="speed-setting"><label for="start-speed">시작 속도 <output id="start-speed-out">70</output> km/h</label><input type="range" id="start-speed" min="20" max="200" value="70" step="5"></div>
+      <div class="speed-setting"><label for="start-speed">시작 속도 <output id="start-speed-out">70</output> km/h</label><input type="range" id="start-speed" min="20" max="270" value="70" step="5"></div>
     </div>
     <div class="practice-intro card" id="practice-intro" hidden><div><span class="tag">5회 × 같은 조건</span><strong>가장 빠른 1회보다, 재현 가능한 5회.</strong><p>진입·회전·탈출 구간을 비교합니다. 코스 이탈은 유효 기록에서 제외합니다.</p></div><div class="attempt-counter"><span id="attempt-count">0</span><small>/ 5 완료</small></div><button class="btn" id="new-session">새 세트</button></div>
     <div class="workspace">
       <div class="drive-column">
         <section class="arena card" aria-label="차량 주행 실험">
           <div id="drive-goal" class="drive-goal" hidden><b id="drive-goal-title"></b><span id="drive-goal-cue"></span><small id="drive-load-cue"></small></div>
-          <div class="arena-top"><div><span class="status-dot" id="run-dot"></span><span id="run-status">준비됨</span><span class="tag" id="scene-tag">90° LEFT</span></div><div class="arena-tools"><label class="small-toggle"><input type="checkbox" id="show-path" checked> 기준선</label><button class="icon-btn" id="camera-toggle" title="카메라 전환" aria-label="전체 코스와 차량 추적 카메라 전환">⌖</button></div></div>
+          <div id="retry-strip" class="retry-strip" hidden><b id="retry-label"></b><span id="retry-condition"></span><button class="btn subtle" id="retry-full">전체 연습으로 돌아가기</button></div><div class="arena-top"><div><span class="status-dot" id="run-dot"></span><span id="run-status">준비됨</span><span class="tag" id="scene-tag">90° LEFT</span></div><div class="arena-tools"><label class="small-toggle"><input type="checkbox" id="show-path" checked> 중심선</label><label class="small-toggle"><input type="checkbox" id="show-reference" checked> 참고 주행선</label><button class="icon-btn" id="camera-toggle" title="카메라 전환" aria-label="전체 코스와 차량 추적 카메라 전환">⌖</button></div></div>
           <div class="canvas-wrap"><canvas id="track" aria-label="차량 위치, 차체 방향, 이동 방향과 코스를 표시하는 실시간 주행 화면"></canvas><div class="speed-hud"><strong id="speed">70</strong><span>KM/H</span></div><div class="time-hud"><span id="phase">진입 준비</span><strong id="elapsed">00.00</strong></div><div class="start-hint" id="start-hint"><span>READY TO OBSERVE</span><strong>브레이크를 놓으며<br>차가 도는 순간을 보세요.</strong><p id="scene-description">민트색 선은 비교용 중심선입니다. 최적 레이싱 라인이 아닙니다.</p></div><div id="mouse-pad-drive"></div><div class="canvas-legend"><span><i class="legend-line lime"></i>차체 방향</span><span><i class="legend-line cyan"></i>이동 방향</span><span><i class="legend-line muted-line"></i>주행 궤적</span></div></div>
-          <div class="transport"><button class="btn primary" id="play">▶ 시작</button><button class="btn" id="reset">↺ 다시 시작</button><button class="btn subtle" id="end-run" hidden>현재 시도 분석</button><label for="time-scale">시간 <select id="time-scale"><option value="1">1×</option><option value="0.5">0.5× · 관찰</option></select></label><span id="track-status">코스 안</span></div>
+          <div class="transport"><button class="btn primary" id="play">▶ 시작</button><button class="btn" id="reset">↺ 다시 시작</button><button class="btn subtle" id="end-run" hidden>현재 시도 분석</button><button class="btn subtle" id="open-results" hidden>결과 열기</button><label for="time-scale">시간 <select id="time-scale"><option value="1">1×</option><option value="0.5">0.5× · 관찰</option></select></label><span id="track-status">코스 안</span></div>
         </section>
-        <p class="fineprint course-note">출발 방향 ↑ · 코스를 출발 방향에 맞춰 표시합니다. <span id="board-note" hidden></span></p>
-        <section class="card input-panel">
+        <p class="fineprint course-note">출발 방향 ↑ · 주행 중 축척 고정 · 코스 위치는 미니맵으로 확인합니다. <span id="board-note" hidden></span></p>
+        <details id="corner-guide" class="card corner-guide" hidden><summary>전체 코너 구간의 속도 · 연결 코너는 묶음</summary><p class="fineprint">현재 차량·노면의 참고 주행선에서 계산한 모델 속도입니다. 실제 게임 검증값과 최속 라인은 아닙니다. 각 지점의 정의를 확인하세요.</p><div id="corner-guide-body"></div><button class="btn subtle" id="corner-guide-transfer">실제 심의 코너 기록 남기기 →</button></details><section class="card input-panel">
           <div class="section-heading"><h2>내 입력</h2><div class="segmented" role="group" aria-label="입력 방식"><button data-input="keyboard" class="active" aria-pressed="true">키보드</button><button data-input="mouse" aria-pressed="false">마우스</button><button data-input="gamepad" aria-pressed="false">패드</button></div></div>
           <p class="input-guide" id="input-guide"><kbd>W</kbd> 가속 <kbd>S</kbd> 브레이크 <kbd>A</kbd><kbd>D</kbd> 조향 · 방향키도 사용 · <kbd>Space</kbd> 일시정지 <kbd>R</kbd> 재시작</p>
           <div id="mouse-pad-home"><div id="mouse-pad" hidden tabindex="0" role="application" aria-label="마우스 조작 패드. 누른 채 좌우로 조향, 위로 가속, 아래로 제동."><span class="pad-top">가속</span><span class="pad-bottom">제동</span><span class="pad-left">왼쪽</span><span class="pad-right">오른쪽</span><div id="pad-dot"></div></div></div>
@@ -75,7 +75,7 @@
         <section class="coach-card"><p class="eyebrow">READ THE CAR</p><h2 id="coach-title">먼저, 직진하며 제동해 보세요.</h2><p id="coach-text">앞쪽 하중이 늘어도 제동에 접지를 쓰고 있다면, 동시에 요구할 수 있는 회전력에는 한계가 있습니다.</p><div id="coach-action">실험 → 같은 속도에서 제동량만 바꿔 보기</div></section>
       </aside>
     </div>
-    <section id="results" class="card results" hidden aria-live="polite"></section>
+    <aside id="result-dock" class="result-dock" hidden aria-label="주행 결과와 구간 재도전"><div class="result-dock-head"><b>코너 코치</b><span>주행 화면 유지</span><button id="close-results" class="btn subtle" aria-label="결과 패널 닫기">닫기 ×</button></div><section id="results" class="results" hidden></section></aside>
   </section>
   <section id="learn-page" hidden><div class="page-heading"><div><p class="eyebrow">UNDERSTAND BEFORE YOU PUSH</p><h1>감각에 이름을 붙이기.</h1><p class="intro">레이싱을 기반으로, 랠리와 드리프트까지. 예측하고 확인하는 짧은 훈련.</p></div></div><div id="lessons-root"></div></section>
   <section id="guide-page" hidden><div class="page-heading"><div><p class="eyebrow">ULTIMATE PRACTICE & GUIDE / GROWING EDITION</p><h1>한 원리에서, 모든 종목으로.</h1><p class="intro">레이싱·랠리·드리프트·포뮬러. 개념 실험과 실제 심에서의 훈련을 연결합니다.</p></div></div><div id="guide-root"></div></section>
@@ -85,6 +85,6 @@
 </main>
 <dialog id="model-dialog"><form method="dialog"><button class="icon-btn close-dialog" aria-label="닫기">×</button></form><p class="eyebrow">ABOUT THIS TRAINER</p><h2>차를 읽는 연습을 위한 작은 실험실.</h2><p>평면 차량 모델, 앞뒤 타이어의 횡력·종력 결합, 근사 하중 이동을 사용합니다. 교육용 모델이며 특정 게임이나 실제 차에 맞춰 검증한 모델은 아닙니다.</p><p>자동 전진 기어와 ABS에 가까운 제동을 가정합니다. 서스펜션 세부 운동, 캠버, 노면 요철, 점프, 타이어 열·마모, 연료 소모, 차동장치 세팅, 휠의 피드백은 재현하지 않습니다. 자갈은 낮은 접지의 근사이며 실제 랠리 노면 모델이 아닙니다. 전진 상태를 가정하므로 후진·완전한 스핀·90°를 넘는 차체 슬립은 재현 범위 밖입니다.</p><p>훈련 기록은 이 브라우저에만 저장됩니다. 반복 훈련은 짧은 코너를 같은 조건으로 재현하는 연습입니다. 실제 롱런에서의 타이어 관리·연료 변화·트래픽 판단까지 평가하지는 않습니다.</p><h3>실제 심으로 가져갈 때</h3><p>익숙한 차와 고정 셋업으로 한 코너를 고르세요. 입력 하나만 바꾸고 진입 속도, 브레이크 해제, 최소 속도, 탈출 시점을 비교하세요. 어느 구간에서 시간을 잃었는지 확인한 뒤 전체 랩으로 넓히세요.</p><p class="fineprint">시간은 시뮬레이션 시간입니다. 0.5× 기록은 관찰 연습으로 따로 구분됩니다. 추천 수치·접지 표시·진단은 이 모델 안에서만 해석하세요. 패드는 브라우저의 표준 Gamepad 매핑(왼쪽 스틱·LT·RT)을 사용하며 기기/브라우저에 따라 달라질 수 있습니다.</p></dialog>
 <div id="toast" role="status" hidden></div>
-<script src="physics.js"></script><script src="tracks.js"></script><script src="training.js"></script><script src="replay.js"></script><script src="debrief.js"></script><script src="academy.js"></script><script src="lessons.js"></script><script src="guide.js"></script><script src="transfer.js"></script><script src="render.js"></script><script src="app.js"></script>
+<script src="physics.js"></script><script src="tracks.js"></script><script src="training.js"></script><script src="replay.js"></script><script src="retry.js"></script><script src="debrief.js"></script><script src="academy.js"></script><script src="lessons.js"></script><script src="guide.js"></script><script src="transfer.js"></script><script src="render.js"></script><script src="app.js"></script>
 </body>
 </html>

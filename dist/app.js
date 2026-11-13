@@ -13,9 +13,10 @@
   let controls = {steer: 0, throttle: 0, brake: 0, handbrake:0, clutch:0}, keys = new Set(), pointer = null;
   let lastTime = 0, sampleTime = 0, uiTime = 0, toastTimer, storageFailed = false;
   let initialLoads;
-  let activeMission=null, observe=false, academy=null, fullTrace=[], reviewTime=null, diagnostic=null;
+  let activeMission=null, observe=false, academy=null, transfer=null, fullTrace=[], reviewTime=null, diagnostic=null;
   let replayPlaying=false, replayRate=.25, replayWindow=null, referenceRun=null, replayFocusTime=null, replayFocusNote='';
   const referenceCache=new Map();
+  let snapshots=[],retrySession=null,retryPlan=null,retryCountdown=0,reviewActive=false;
   try { const saved = JSON.parse(localStorage.getItem(storageKey) || '[]'); if (Array.isArray(saved)) history = saved.filter(validRecord).slice(-150); } catch (_) { storageFailed = true; }
 
   function validRecord(r) {
@@ -23,15 +24,51 @@
     const optionalNumber = value => value === null || nonnegative(value);
     if (!r || typeof r.id !== 'string' || typeof r.at !== 'string' || !Number.isFinite(Date.parse(r.at)) || !nonnegative(r.time) || r.time > 901 || !r.config || typeof r.config !== 'object') return false;
     const c = r.config;
-    if (!presetIds.includes(c.preset) || !['dry','wet','gravel'].includes(c.surface) || !['rwd','fwd','awd'].includes(c.drive) || !['keyboard','mouse','gamepad'].includes(c.input) || ![.5,1].includes(c.timeScale) || !Number.isFinite(c.startSpeed) || c.startSpeed < 20 || c.startSpeed > 200) return false;
-    c.vehicle??='legacy';c.aids??='default';c.modelVersion??='v1';
+    if (!presetIds.includes(c.preset) || !['dry','wet','gravel'].includes(c.surface) || !['rwd','fwd','awd'].includes(c.drive) || !['keyboard','mouse','gamepad'].includes(c.input) || ![.5,1].includes(c.timeScale) || !Number.isFinite(c.startSpeed) || c.startSpeed < 20 || c.startSpeed > 270) return false;
+    c.vehicle??='legacy';c.aids??='default';c.modelVersion??='v1';c.sceneVersion??='v04';if(!['v04','v05'].includes(c.sceneVersion))return false;
     if(![...vehicleIds,'legacy'].includes(c.vehicle)||!['default','off','on'].includes(c.aids)||!['v1','v2'].includes(c.modelVersion))return false;
     if (!Array.isArray(r.sectors) || r.sectors.length !== 3 || !r.sectors.every(optionalNumber) || typeof r.valid !== 'boolean' || typeof r.paused !== 'boolean' || typeof r.practice !== 'boolean' || !['finish','stop','spin','timeout','far','offtrack','user'].includes(r.reason)) return false;
     if (!['offTime','frontPct','rearPct','maxBeta'].every(key => nonnegative(r[key])) || r.frontPct > 100.01 || r.rearPct > 100.01 || !['entrySpeed','minSpeed','exitSpeed','stopDistance'].every(key => optionalNumber(r[key]))) return false;
     if (r.valid && (r.reason !== 'finish' || r.offTime >= .2 || (c.preset === 'corner' && (!r.sectors.every(nonnegative) || Math.abs(r.sectors.reduce((sum,value)=>sum+value,0)-r.time) > .1)))) return false;
     return true;
   }
-  const config = () => ({preset:$('preset').value,vehicle:$('vehicle').value||'gt3',aids:$('aids').value||'default',modelVersion:'v2',surface:$('surface').value,drive:$('drive').value,startSpeed:Number($('start-speed').value),timeScale:Number($('time-scale').value),input:inputMode,missionId:activeMission?.id||null,mode:observe?'observe':'drive'});
+  const config = () => ({preset:$('preset').value,vehicle:$('vehicle').value||'gt3',aids:$('aids').value||'default',modelVersion:'v2',sceneVersion:'v05',surface:$('surface').value,drive:$('drive').value,startSpeed:Number($('start-speed').value),timeScale:Number($('time-scale').value),input:inputMode,missionId:activeMission?.id||null,mode:observe?'observe':'drive'});
+  function captureInitial(){
+    if(!globalThis.GripRetry)return;
+    const snap=GripRetry.capture(state,controls,run.progress,false);snapshots=[snap];fullTrace=[GripRetry.sample(snap)];run.traceAt=state.time;
+  }
+  function prepareReference(){
+    referenceRun=null;
+    if(globalThis.GripReplay&&(activeMission||['monza','nurbgp'].includes(scene.preset))){
+      const c=config(),key=JSON.stringify([activeMission?.id||scene.preset,scene.total,c.vehicle,c.surface,c.drive,c.aids,c.startSpeed]);
+      if(!referenceCache.has(key)){const generated=GripReplay.generate(scene,activeMission,c);if(referenceCache.size>=5)referenceCache.delete(referenceCache.keys().next().value);referenceCache.set(key,generated);}
+      const candidate=referenceCache.get(key);if(candidate?.complete)referenceRun=candidate;
+    }
+    const rows=globalThis.GripReplay?.cornerGuide?.(scene,referenceRun)||[];
+    const speedText=v=>Number.isFinite(v)?String(Math.round(v)):'—';
+    $('corner-guide').hidden=!rows.length;
+    // Table populated from measured reference samples; never invent missing speeds.
+    $('corner-guide-body').innerHTML=rows.length?'<div class="table-scroll"><table><thead><tr><th>코너</th><th>접근</th><th>진입</th><th>최저</th><th>탈출</th><th>제동 시작</th></tr></thead><tbody>'+rows.map(r=>'<tr><td>'+esc(r.name||r.cornerName)+(r.available===false?'<br><small>시범 기록 부족</small>':'')+'</td><td>'+speedText(r.approachSpeed)+'</td><td>'+speedText(r.entrySpeed)+'</td><td>'+speedText(r.minSpeed)+'</td><td>'+speedText(r.exitSpeed)+'</td><td>'+speedText(r.brakeDistance)+' m 전</td></tr>').join('')+'</tbody></table></div><p class="fineprint">속도 km/h · 제동 시작은 모델 회전 기준선까지 남은 거리이며 실제 트랙 보드의 정답이 아닙니다. '+esc(rows[0]?.definition||'접근/탈출 측정 위치는 코너별 모델 구간 기준입니다.')+' 실제 심의 수치는 아래에 따로 기록하세요.</p>':'';
+  }
+  function beginRetry(auto=true){
+    if(!retrySession){if(!retryPlan)return;retrySession={plan:retryPlan,previous:GripRetry.summarize(retryPlan,fullTrace,run.lastReason||'user',{paused:run.paused}),count:0,comparison:null};}
+    const session=retrySession;reset(true,true);
+    const restored=GripRetry.restore(session.plan);Object.assign(state,restored.state);controls={...restored.controls};run.progress=restored.progress;run.lastPosition={x:state.x,y:state.y};run.lastHeading=state.heading;run.trainingMetrics.peakSpeed=state.speed*3.6;
+    run.config=config();run.segmentRetry=true;captureInitial();retryPlan=session.plan;session.count++;
+    $('retry-strip').hidden=false;$('retry-label').textContent=session.plan.label+' · 재도전 '+session.count;
+    $('retry-condition').textContent=Math.round(session.plan.startS)+'–'+Math.round(session.plan.endS)+' m · 시작 '+Math.round(state.speed*3.6)+' km/h · 출발 상태 고정';
+    $('start-hint').hidden=!auto;$('scene-description').textContent='같은 위치·속도·차량 상태에서 시작합니다. 입력 하나만 바꿔 보세요.';
+    $('play').textContent='▶ 구간 시작';$('reset').textContent='↺ 이 구간 다시';$('run-status').textContent='구간 재도전 준비';lockSettings(true);updateTelemetry();
+    if(auto){retryCountdown=2;$('start-hint').querySelector('strong').textContent='2 · 같은 코너 다시';}
+  }
+  function showRetryResult(record){
+    const session=retrySession,current=GripRetry.summarize(session.plan,fullTrace,record.reason,{paused:record.paused});
+    session.previousTrace=session.previous?.trace;session.comparison=GripRetry.compare(session.plan,session.previous,current);session.previous=current;
+    const c=session.comparison;$('results').hidden=false;
+    $('results').innerHTML='<p class="eyebrow">CORNER LOOP / 재도전 '+session.count+'</p><h2>'+esc(c.headline)+'</h2><div class="retry-comparison">'+(c.items||[]).map(i=>'<article class="'+esc(i.assessment)+'"><b>'+esc(i.label)+'</b><span>'+esc(({better:'개선',worse:'다시 확인',changed:'입력·속도 변화',same:'비슷함'})[i.assessment]||'관찰')+'</span><p>'+esc(i.text)+'</p></article>').join('')+'</div><p class="fineprint">'+esc(c.note||'같은 시작 상태와 구간에서 직전 시도와 비교합니다. 입력 변화와 결과의 관계는 인과관계 확정이 아닙니다.')+'</p><p class="fineprint">구간 연습은 전체 과제 달성·전체 랩 기록에 합산하지 않습니다. 이 탭에서만 비교를 유지합니다.</p>';
+    const chart=document.createElement('div');chart.className='retry-chart';chart.innerHTML='<p class="fineprint">실선: 이번 시도 · 점선: 직전 시도 · 같은 코스 위치의 제동과 조향</p><canvas id="retry-comparison-chart" aria-label="직전 시도와 이번 시도의 입력 비교"></canvas>';$('results').appendChild(chart);
+    appendDebrief(record);
+  }
   function makeScene(preset) {
     const track=globalThis.GripTracks?.get(preset);if(track)return track;
     const points = [];
@@ -58,7 +95,10 @@
     return best;
   }
   function clearInputs(){keys.clear();pointer=null;controls={steer:0,throttle:0,brake:0,handbrake:0,clutch:0};$('pad-dot').style.left='50%';$('pad-dot').style.top='50%';}
-  function reset(keepResults=false){
+  function reset(keepResults=false,keepRetry=false){
+    if(!keepRetry){retrySession=null;retryPlan=null;}
+    retryCountdown=0;reviewActive=false;snapshots=[];$('retry-strip').hidden=!retrySession;$('result-dock').hidden=true;$('open-results').hidden=true;
+    $('reset').textContent='↺ 다시 시작';
     running=false;done=false;clearInputs();scene=activeMission?GripTraining.scene(activeMission.id):makeScene($('preset').value);
     state=GripPhysics.create({vehicle:$('vehicle').value||'gt3',speed:Number($('start-speed').value)/3.6,surface:$('surface').value,aids:$('aids').value||'default'});
     state.x=scene.points[0].x;state.y=scene.points[0].y;state.heading=scene.startHeading||0;
@@ -68,6 +108,7 @@
     $('board-note').hidden=!scene.brakingBoards?.length;$('board-note').textContent=scene.brakingBoardNote||'숫자 거리판은 회전 기준선까지의 모델 거리(m)입니다. 실제 서킷의 제동 지점은 아닙니다.';
     run={config:config(),progress:0,travelDistance:0,lastPosition:{x:state.x,y:state.y},offTime:0,maxOff:0,frontTime:0,rearTime:0,spinTime:0,maxBeta:0,entrySpeed:null,minSpeed:Infinity,exitSpeed:null,gates:[null,null],stopDistance:null,paused:false};
     run.trainingMetrics={brakeTime:0,brakeAtEntry:null,overlapTime:0,turnBrakeTime:0,progress:0,travelDistance:0,peakSpeed:state.speed*3.6,headingTurnDeg:0};run.lastHeading=state.heading;run.traceAt=-1;
+    captureInitial();prepareReference();
     $('start-hint').hidden=false;$('play').textContent='▶ 시작';$('run-status').textContent='준비됨';$('scene-tag').textContent=scene.name;
     $('run-dot').style.background='var(--muted)';$('track-status').textContent='코스 안';$('track-status').style.color='var(--muted)';
     const prompts={corner:['브레이크를 놓으며<br>차가 도는 순간을 보세요.','민트색 선은 비교용 중심선입니다. 최적 레이싱 라인이 아닙니다.'],brake:['곧게 제동한 뒤,<br>조향을 조금 더해 보세요.','완전히 멈추면 정지 거리와 접지 요구량을 확인합니다.'],slalom:['속도를 낮추고,<br>방향 전환을 미리 준비하세요.','자갈 노면은 낮은 접지의 근사입니다. 요철·점프는 포함하지 않습니다.'],drift:['차의 코와 이동 방향,<br>두 방향을 구분하세요.','처음에는 원을 천천히 도세요. 뒤가 흐를 때 시선과 카운터의 관계를 관찰합니다.']};
@@ -77,7 +118,7 @@
     $('results').hidden=true;
     updateVehicleInfo();updateControlsUI();updateTelemetry();lockSettings(false);updateMission();
   }
-  function lockSettings(lock){['vehicle','aids','preset','surface','drive','start-speed','time-scale'].forEach(id=>$(id).disabled=lock||!!activeMission);document.querySelectorAll('[data-input]').forEach(el=>el.disabled=lock||observe);}
+  function lockSettings(lock){['vehicle','aids','preset','surface','drive','start-speed','time-scale'].forEach(id=>$(id).disabled=lock||!!activeMission||!!retrySession);document.querySelectorAll('[data-input]').forEach(el=>el.disabled=lock||observe||!!retrySession);$('camera-toggle').disabled=lock;}
   function updateVehicleInfo(){
     const v=GripPhysics.vehicles?.[$('vehicle').value];if(!v)return;
     $('vehicle-title').textContent=v.label;
@@ -88,14 +129,16 @@
   function selectVehicle(id){
     if(!vehicleIds.includes(id))return;
     $('vehicle').value=id;const v=GripPhysics.vehicles?.[id];
-    if(v){$('drive').value=v.drive;$('surface').value=v.defaultSurface||'dry';$('start-speed').value=clamp(v.startingSpeedKph||70,20,200);$('start-speed-out').textContent=$('start-speed').value;}
+    if(v){$('drive').value=v.drive;$('surface').value=v.defaultSurface||'dry';$('start-speed').value=clamp(v.startingSpeedKph||70,20,270);$('start-speed-out').textContent=$('start-speed').value;}
     $('aids').value='default';
   }
   function play(){
+    if(retryCountdown>0){retryCountdown=0;$('start-hint').hidden=true;}
+    if(done&&retrySession){beginRetry();return;}
     if(page==='practice'&&attempts.length>=5&&done){toast('세트가 끝났습니다. ‘새 세트’로 다시 시작하세요.');return;}
     if(done)reset(true);
     running=!running;
-    if(running){$('start-hint').hidden=true;run.config=config();lockSettings(true);if(activeMission)$('drive-goal').scrollIntoView({block:'start',behavior:'smooth'});}
+    if(running){$('start-hint').hidden=true;run.config=config();lockSettings(true);if(activeMission&&!retrySession&&state.time===0)$('drive-goal').scrollIntoView({block:'start',behavior:'smooth'});}
     else {run.paused=true;clearInputs();}
     $('play').textContent=running?'Ⅱ 일시정지':'▶ 계속';$('run-status').textContent=running?(observe?'자동 시범 · 기록 제외':'직접 주행 중'):'일시정지';$('run-dot').style.background=running?'var(--lime)':'var(--muted)';updateMission();
   }
@@ -138,27 +181,30 @@
       gates.forEach((g,i)=>{if(run.gates[i]===null&&previous<g&&run.progress>=g){const frac=(g-previous)/(run.progress-previous);run.gates[i]=Math.max(0,state.time-dt+frac*dt);if(i===0){run.entrySpeed=state.speed*3.6;tm.brakeAtEntry=controls.brake;}else run.exitSpeed=state.speed*3.6;}});
       if(run.progress>=gates[0]&&run.progress<=gates[1]){run.minSpeed=Math.min(run.minSpeed,state.speed);tm.turnBrakeTime+=controls.brake>.2?dt:0;}
     }
-    if(state.time-run.traceAt>=.049||near.distance>scene.width/2-1&&!(fullTrace.at(-1)?.off)){run.traceAt=state.time;fullTrace.push({t:state.time,s:run.progress,x:state.x,y:state.y,heading:state.heading,speed:state.speed*3.6,steer:controls.steer,brake:controls.brake,throttle:controls.throttle,handbrake:controls.handbrake,clutch:controls.clutch,utilF:state.utilF,utilR:state.utilR,beta:state.beta*rad,wheelSteer:state.steer,ax:state.ax,ay:state.ay,alphaF:state.alphaF,alphaR:state.alphaR,loadFL:state.loadFL,loadFR:state.loadFR,loadRL:state.loadRL,loadRR:state.loadRR,downforce:state.downforce,tcActive:state.tcActive,fxF:state.fxF,fyF:state.fyF,fxR:state.fxR,fyR:state.fyR,capF:state.capF,capR:state.capR,yawRate:state.yawRate,off:near.distance>scene.width/2-1});if(fullTrace.length>18000)fullTrace.shift();}
+    if(state.time-run.traceAt>=.049||near.distance>scene.width/2-1&&!(fullTrace.at(-1)?.off)){run.traceAt=state.time;fullTrace.push({t:state.time,s:run.progress,x:state.x,y:state.y,heading:state.heading,speed:state.speed*3.6,steer:controls.steer,brake:controls.brake,throttle:controls.throttle,handbrake:controls.handbrake,clutch:controls.clutch,utilF:state.utilF,utilR:state.utilR,beta:state.beta*rad,wheelSteer:state.steer,ax:state.ax,ay:state.ay,alphaF:state.alphaF,alphaR:state.alphaR,loadFL:state.loadFL,loadFR:state.loadFR,loadRL:state.loadRL,loadRR:state.loadRR,downforce:state.downforce,tcActive:state.tcActive,fxF:state.fxF,fyF:state.fyF,fxR:state.fxR,fyR:state.fyR,capF:state.capF,capR:state.capR,yawRate:state.yawRate,off:near.distance>scene.width/2-1});if(fullTrace.length>18000)fullTrace.shift();if(globalThis.GripRetry){snapshots.push(GripRetry.capture(state,controls,run.progress,near.distance>scene.width/2-1));if(snapshots.length>2400)snapshots.shift();}}
     if((scene.preset==='brake'||scene.trainingId==='intro_brake')&&state.speed<.1&&state.time>1){run.stopDistance=run.travelDistance;finish('stop');return;}
-    if(!freeScenes.includes(scene.preset)&&run.progress>=scene.total-2&&near.distance<scene.width){finish('finish');return;}
-    if(activeMission&&run.offTime>2){finish('offtrack');return;}
+    if(retrySession&&run.progress>=retrySession.plan.endS&&near.distance<scene.width/2-1){finish('finish');return;}
+    if(!retrySession&&!freeScenes.includes(scene.preset)&&run.progress>=scene.total-2&&near.distance<scene.width){finish('finish');return;}
+    if((activeMission||retrySession)&&run.offTime>2){finish('offtrack');return;}
     if(run.spinTime>1.0){finish('spin');return;}
     if(state.time>=(scene.timeLimit||60)){finish('timeout');return;}
     if(near.distance>70){finish('far');return;}
     $('track-status').textContent=near.distance>scene.width/2-1?'코스 이탈':'코스 안';$('track-status').style.color=near.distance>scene.width/2-1?'var(--coral)':'var(--muted)';
   }
   function finish(reason){
+    run.lastReason=reason;
+    if(globalThis.GripRetry&&state.time>(fullTrace.at(-1)?.t??-1)){const final=GripRetry.capture(state,controls,run.progress,nearest(state).distance>scene.width/2-1);if(final){fullTrace.push(GripRetry.sample(final));snapshots.push(final);}}
     running=false;done=true;clearInputs();lockSettings(false);
     const valid=reason==='finish'&&run.offTime<.2;
     const sectors=run.gates[0]!==null&&run.gates[1]!==null?[run.gates[0],run.gates[1]-run.gates[0],state.time-run.gates[1]]:[null,null,null];
     const record={id:Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,7),at:new Date().toISOString(),config:run.config,time:state.time,sectors,valid,reason,offTime:run.offTime,frontPct:100*run.frontTime/Math.max(state.time,.1),rearPct:100*run.rearTime/Math.max(state.time,.1),maxBeta:run.maxBeta,entrySpeed:run.entrySpeed,minSpeed:Number.isFinite(run.minSpeed)?run.minSpeed*3.6:null,exitSpeed:run.exitSpeed,stopDistance:run.stopDistance,paused:run.paused,practice:page==='practice'};
     record.endSpeed=state.speed*3.6;record.trainingMetrics={...run.trainingMetrics};
-    if(!observe){history.push(record);history=history.slice(-150);saveHistory();}
-    if(page==='practice'){attempts.push(record);$('attempt-count').textContent=attempts.length;}
+    if(!observe&&!retrySession){history.push(record);history=history.slice(-150);saveHistory();}
+    if(page==='practice'&&!retrySession){attempts.push(record);$('attempt-count').textContent=attempts.length;}
     $('play').textContent=page==='practice'&&attempts.length>=5?'세트 완료':'▶ 한 번 더';$('run-status').textContent='연습 완료';$('run-dot').style.background='var(--cyan)';
-    showResults(record);updateTelemetry();updateMission();$('results').scrollIntoView({block:'start',behavior:'smooth'});
+    if(retrySession){record.segmentRetry=true;showRetryResult(record);}else showResults(record);$('result-dock').hidden=false;$('result-dock').scrollTop=0;$('open-results').hidden=false;updateTelemetry();updateMission();
   }
-  function sameConfig(a,b){return ['preset','vehicle','aids','modelVersion','surface','drive','startSpeed','timeScale','input'].every(k=>a[k]===b[k])&&(a.missionId||null)===(b.missionId||null)&&(a.mode||'drive')===(b.mode||'drive');}
+  function sameConfig(a,b){return ['preset','vehicle','aids','modelVersion','sceneVersion','surface','drive','startSpeed','timeScale','input'].every(k=>a[k]===b[k])&&(a.missionId||null)===(b.missionId||null)&&(a.mode||'drive')===(b.mode||'drive');}
   function comparison(r){return history.filter(h=>h.id!==r.id&&h.valid&&h.paused===r.paused&&sameConfig(h.config,r.config)).sort((a,b)=>a.time-b.time)[0];}
   const fmt = v => Number.isFinite(v)?v.toFixed(2):'—';
   const delta = v => Number.isFinite(v)?(v>=0?'+':'')+v.toFixed(2):'—';
@@ -198,13 +244,13 @@
     setInput(inputMode);reset();if(watch)play();else window.scrollTo({top:0,behavior:'smooth'});
   }
   function updateMission(view=state){
-    $('end-run').hidden=!activeMission;$('mission-panel').hidden=!activeMission;$('drive-goal').hidden=!activeMission;if(!activeMission)return;
+    $('end-run').hidden=!activeMission&&!retrySession;$('mission-panel').hidden=!activeMission;$('drive-goal').hidden=!activeMission;if(!activeMission)return;
     const m=activeMission,g=scene.gates,phase=g?(run.progress<g.entry?0:run.progress<g.exit?1:2):0;
     $('page-kicker').textContent=observe?'WATCH → TRY':'ONE GOAL. ONE CHANGE.';$('page-title').textContent=observe?'먼저, 입력과 반응을 보세요.':'지금은 이 한 가지만 연습합니다.';$('page-intro').textContent=observe?'자동 조작 예시입니다. 최적 랩이나 실력 평가 기준은 아닙니다.':'차량과 코스는 준비됐습니다. 아래 목표를 읽고 시작하세요.';
     $('mission-label').textContent=observe?'자동 시범 · 내 연습 기록에 포함되지 않음':'안내 연습 · '+(m.durationLabel||'짧은 구간');$('mission-title').textContent=m.title;$('mission-goal').textContent=m.shortGoal;$('mission-why').textContent=m.why;
     $('mission-steps').innerHTML=(m.steps||[]).map((step,i)=>'<li class="'+(i===phase?'current':'')+'"><span>'+String(i+1).padStart(2,'0')+'</span>'+esc(missionText(step))+'</li>').join('');
     $('mission-phase').textContent=done?'결과 확인':!running?'준비 / 멈춤':['진입 준비','코너 안','탈출'][phase];
-    $('mission-cue').textContent=done?'아래에서 결과와 다음 시도에서 바꿀 한 가지를 확인하세요.':!running?missionText(m.inputHint):missionText(m.runningHints?.[phase]||m.shortGoal);
+    $('mission-cue').textContent=done?'옆 결과 패널에서 확인하고 코너 직전부터 다시 시도하세요.':!running?missionText(m.inputHint):missionText(m.runningHints?.[phase]||m.shortGoal);
     $('mission-success').textContent=m.finishCriterion||m.successText;$('mission-progress-bar').style.width=clamp(run.progress/scene.total*100,0,100)+'%';
     $('mission-model-note').textContent=(scene.trainingNote||'교육용 모델 안의 연습 조건입니다. 실제 게임의 브레이크 포인트나 목표 속도가 아닙니다.')+' 도로 밖 시간이 2초를 넘으면 이번 시도를 분석합니다.';
     $('mission-start').textContent=observe?'직접 해보기':done?'↺ 같은 조건으로 다시':running?'Ⅱ 일시정지':state.time>0?'▶ 계속':'▶ 직접 시작';
@@ -213,7 +259,7 @@
   }
   function showMissionResult(r){
     const verdict=GripTraining.evaluate(activeMission.id,r);$('results').hidden=false;
-    if(!observe){try{let p=JSON.parse(localStorage.getItem('intsTrainingProgressV1')||'{}');if(!p||Array.isArray(p)||typeof p!=='object')p={};p[activeMission.id]={passed:verdict.passed,mode:'drive',at:r.at,time:r.time};localStorage.setItem('intsTrainingProgressV1',JSON.stringify(p));academy?.refresh();}catch(_){toast('연습 결과를 저장하지 못했습니다. 이번 결과는 아래에서 확인할 수 있어요.');}}
+    if(!observe){try{let p=JSON.parse(localStorage.getItem('intsTrainingProgressV1')||'{}');if(!p||Array.isArray(p)||typeof p!=='object')p={};p[activeMission.id]={passed:verdict.passed,mode:'drive',sceneVersion:'v05',at:r.at,time:r.time};localStorage.setItem('intsTrainingProgressV1',JSON.stringify(p));academy?.refresh();}catch(_){toast('연습 결과를 저장하지 못했습니다. 이번 결과는 아래에서 확인할 수 있어요.');}}
     $('results').innerHTML='<div class="results-head"><div><p class="eyebrow">'+(observe?'자동 조작 예시 / 내 점수 아님':'이번 연습 결과')+'</p><h2>'+esc(verdict.headline)+'</h2><p>'+esc(verdict.observation)+'</p></div><span class="tag">'+(observe?'관찰 완료':verdict.passed?'이번 목표 달성':'다시 시도')+'</span></div><details class="evidence-details"><summary>목표 조건별 결과 보기</summary><div class="mission-checks">'+verdict.checks.map(c=>'<div class="'+(c.pass?'check-pass':'check-retry')+'"><b>'+(c.pass?'✓':'○')+' '+esc(c.label)+'</b><span>'+esc(c.value??'')+'</span></div>').join('')+'</div></details><div class="next-experiment"><b>다음 시도에서 바꿀 한 가지</b><p>'+esc(missionText(verdict.nextAction))+'</p></div><div class="mission-actions"><button class="btn primary" id="retry-mission">'+(observe?'직접 해보기':'↺ 같은 조건으로 다시')+'</button>'+(verdict.passed&&verdict.nextId&&!observe?'<button class="btn" id="next-mission">다음 연습 →</button>':'')+'<button class="btn subtle" id="result-home">연습 목록</button></div>';
     $('retry-mission').onclick=()=>{startMission(activeMission.id,false);play();};if($('next-mission'))$('next-mission').onclick=()=>startMission(verdict.nextId);$('result-home').onclick=()=>navigate('home');
     appendDebrief(r);
@@ -223,7 +269,7 @@
     diagnostic=GripDebrief.analyze({record,trace:fullTrace,scene,mission:activeMission});
     const objectiveTime=objectiveFocus(record);replayFocusTime=objectiveTime??diagnostic.focusTime;replayFocusNote=objectiveTime!==null?'완주했지만 목표 조건을 놓친 구간으로 이동했습니다. 제동 해제·진입·탈출 기록을 확인하세요.':'';
     const d=diagnostic,confidence={observed:'관측된 사실',likely:'가능성 있는 원인 · 추정',unknown:'원인을 좁힐 기록이 부족함'};
-    referenceRun=null;replayPlaying=false;replayRate=.25;
+    replayPlaying=false;replayRate=.25;if(observe)referenceRun=null;
     if(activeMission&&!observe&&globalThis.GripReplay){
       const key=JSON.stringify([activeMission.id,scene.total,record.config.vehicle,record.config.surface,record.config.drive,record.config.aids,record.config.startSpeed]);
       if(!referenceCache.has(key)){const generated=GripReplay.generate(scene,activeMission,record.config);if(referenceCache.size>=3)referenceCache.delete(referenceCache.keys().next().value);referenceCache.set(key,generated);}
@@ -231,10 +277,14 @@
     }
     const panel=document.createElement('section');panel.className='debrief-panel';panel.innerHTML='<p class="eyebrow">WHY / 실패 직전부터 읽기</p><h3>'+esc(d.headline)+'</h3><span class="tag">'+esc(confidence[d.certainty]||confidence.unknown)+'</span><p>'+esc(d.explanation)+'</p>'+(fullTrace.length?replayMarkup():'')+'<details class="evidence-details"><summary>실패 전후의 관측 근거</summary><ol class="event-timeline">'+(d.events||[]).map(e=>'<li><b>'+fmt(e.t)+' s · '+esc(e.label)+'</b><span>'+esc(e.detail)+'</span></li>').join('')+'</ol></details><p class="next-experiment"><b>다음 시도에서 한 가지</b> '+esc(d.nextAction)+'</p>';
     $('results').appendChild(panel);
+    retryPlan=!observe&&globalThis.GripRetry?(retrySession?.plan||GripRetry.plan({trace:fullTrace,snapshots,scene,focusTime:replayFocusTime,config:record.config})):null;
+    const retryBox=document.createElement('section');retryBox.className='corner-retry-actions';
+    retryBox.innerHTML=retryPlan?'<b>'+esc(retrySession?'같은 구간 한 번 더':retryPlan.label)+'</b><p>'+esc(retryPlan.note)+'</p><button id="retry-corner" class="btn primary">↺ 코너 직전부터 다시 · 2초 후 출발</button><p class="fineprint">출발 위치·속도·차량 상태 고정 · 직전 시도와 비교</p>':'<p class="fineprint">'+(observe?'직접 주행한 뒤 코너 재도전을 사용할 수 있습니다.':'안전하게 되돌릴 기록이 아직 부족합니다. 전체 연습을 다시 시작해 주세요.')+'</p>';
+    $('results').appendChild(retryBox);if($('retry-corner'))$('retry-corner').onclick=()=>beginRetry();
     if(fullTrace.length){
       setReplayWindow('focus');
-      $('review-time').oninput=()=>{replayPlaying=false;reviewTime=clamp(Number($('review-time').value),replayWindow.from,replayWindow.to);renderReview();};
-      $('review-play').onclick=()=>{if(reviewTime>=replayWindow.to-.001)reviewTime=replayWindow.from;replayPlaying=!replayPlaying;renderReview();};
+      $('review-time').oninput=()=>{reviewActive=true;replayPlaying=false;reviewTime=clamp(Number($('review-time').value),replayWindow.from,replayWindow.to);renderReview();};
+      $('review-play').onclick=()=>{reviewActive=true;if(reviewTime>=replayWindow.to-.001)reviewTime=replayWindow.from;replayPlaying=!replayPlaying;renderReview();};
       $('review-speed').onchange=()=>{const v=Number($('review-speed').value);replayRate=[.25,.5,1].includes(v)?v:.25;};
       $('review-back').onclick=()=>{replayPlaying=false;reviewTime=clamp(reviewTime-.1,replayWindow.from,replayWindow.to);renderReview();};
       $('review-forward').onclick=()=>{replayPlaying=false;reviewTime=clamp(reviewTime+.1,replayWindow.from,replayWindow.to);renderReview();};
@@ -281,13 +331,14 @@
   }
   function drawReplayVehicles(sample,reference){
     if(!$('replay-player'))return;const view=asState(sample);
-    GripRenderer.track($('replay-player'),view,scene,{follow:true,cameraState:view,progress:sample.s,trail:fullTrace.filter(p=>p.t<=sample.t&&p.t>=sample.t-4),path:true,review:sample,reviewLabel:'내 기록'});
-    if(reference)GripRenderer.track($('replay-reference'),asState(reference),scene,{follow:true,cameraState:view,progress:sample.s,trail:referenceRun.trace.filter(p=>p.s<=sample.s&&p.s>=sample.s-60),path:true,review:reference,reviewLabel:'같은 위치의 시범',vehicleColor:'#6dd6eb'});
+    GripRenderer.track($('replay-player'),view,scene,{follow:true,minimap:false,cameraState:view,progress:sample.s,trail:fullTrace.filter(p=>p.t<=sample.t&&p.t>=sample.t-4),path:true,review:sample,reviewLabel:'내 기록'});
+    if(reference)GripRenderer.track($('replay-reference'),asState(reference),scene,{follow:true,minimap:false,cameraState:view,progress:sample.s,trail:referenceRun.trace.filter(p=>p.s<=sample.s&&p.s>=sample.s-60),path:true,review:reference,reviewLabel:'같은 위치의 시범',vehicleColor:'#6dd6eb'});
   }
   function renderReview(){
-    $('sim-page').classList.toggle('reviewing',done&&reviewTime!==null);
+    // Replay stays inside the side panel until the user explicitly selects playback.
     if(reviewTime===null||!fullTrace.length||!$('review-chart'))return;
     const sample=reviewSample(reviewTime),reference=referenceRun?GripReplay.atDistance(referenceRun.trace,sample.s):null;
+    if(retrySession?.previousTrace&&$('retry-comparison-chart'))GripRenderer.comparison?.($('retry-comparison-chart'),fullTrace,retrySession.previousTrace,{progress:sample.s,fromS:retrySession.plan.startS,toS:retrySession.comparison.commonToS||retrySession.plan.endS,playerLabel:'이번 시도',referenceLabel:'직전 시도'});
     $('review-readout').textContent=sample.t.toFixed(2)+' s';$('review-values').innerHTML=[['속도',sample.speed.toFixed(1)+' km/h'],['브레이크',Math.round(sample.brake*100)+'%'],['가속',Math.round(sample.throttle*100)+'%'],['조향',Math.round(Math.abs(sample.steer)*100)+'% '+(Math.abs(sample.steer)<.005?'중립':sample.steer>0?'왼쪽':'오른쪽')],['앞축 요구',Math.round(sample.utilF*100)+'%'],['차체 슬립각',sample.beta.toFixed(1)+'°']].map(([k,v])=>'<div><span>'+k+'</span><b>'+v+'</b></div>').join('');
     $('review-time').value=reviewTime;$('review-play').textContent=replayPlaying?'Ⅱ 재생 일시정지':'▶ 슬로모션 재생';
     $('replay-player-speed').textContent=sample.speed.toFixed(1)+' km/h';$('replay-player-inputs').innerHTML=inputVisual(sample);
@@ -339,7 +390,7 @@
     let armed=false;$('clear-history').onclick=()=>{if(!armed){armed=true;$('clear-history').textContent='한 번 더 눌러 전체 삭제';return;}history=[];attempts=[];$('attempt-count').textContent='0';saveHistory();renderHistory();};
   }
   function navigate(next){
-    replayPlaying=false;
+    replayPlaying=false;retryCountdown=0;
     if(!['home','lab','practice','learn','guide','transfer','history'].includes(next))next='home';
     const switchingSimulator=['lab','practice'].includes(next)&&simPage!==next;
     if(running){running=false;run.paused=true;clearInputs();$('play').textContent='▶ 계속';$('run-status').textContent='일시정지';$('run-dot').style.background='var(--muted)';}
@@ -357,7 +408,11 @@
   function historyReplace(next){try{window.history.replaceState(null,'','#'+next);}catch(_){}}
   function toast(message){$('toast').textContent=message;$('toast').hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').hidden=true,4200);}
   $('end-run').onclick=()=>{if(!done&&state.time>.1)finish('user');else toast('먼저 주행을 시작하세요.');};
-  $('play').onclick=play;$('reset').onclick=()=>{if(page==='practice'&&attempts.length>=5){toast('새 세트로 시작하세요.');return;}reset(true);};
+  $('close-results').onclick=()=>{$('result-dock').hidden=true;replayPlaying=false;reviewActive=false;};
+  $('open-results').onclick=()=>{$('result-dock').hidden=false;};
+  $('retry-full').onclick=()=>reset();
+  $('corner-guide-transfer').onclick=()=>{navigate('transfer');transfer?.openNotes?.({trackId:scene.parentTrack||scene.preset,vehicle:$('vehicle').value});};
+  $('play').onclick=play;$('reset').onclick=()=>{if(retrySession){beginRetry(false);return;}if(page==='practice'&&attempts.length>=5){toast('새 세트로 시작하세요.');return;}reset(true);};
   function freeLab(){activeMission=null;observe=false;$('sim-page').classList.remove('guided');setInput(inputMode);navigate('lab');reset();}
   document.querySelectorAll('[data-page]').forEach(el=>el.onclick=()=>el.dataset.page==='lab'?freeLab():navigate(el.dataset.page));
   document.querySelectorAll('[data-input]').forEach(el=>el.onclick=()=>{setInput(el.dataset.input);settingsChanged();});
@@ -383,26 +438,27 @@
   const driveKeys=['KeyW','KeyA','KeyS','KeyD','KeyE','KeyQ','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space','KeyR'];
   document.addEventListener('keydown',e=>{if(!['lab','practice'].includes(page)||$('model-dialog').open||!driveKeys.includes(e.code)||['SELECT','INPUT','TEXTAREA'].includes(e.target.tagName)||e.target.isContentEditable||((e.code==='Space')&&e.target.tagName==='BUTTON'))return;e.preventDefault();if(e.code==='Space'){if(!e.repeat)play();}else if(e.code==='KeyR'){if(!e.repeat)$('reset').click();}else if(inputMode==='keyboard')keys.add(e.code);});
   document.addEventListener('keyup',e=>keys.delete(e.code));
-  const pauseHidden=()=>{replayPlaying=false;clearInputs();if(running){running=false;run.paused=true;$('play').textContent='▶ 계속';$('run-status').textContent='일시정지';$('run-dot').style.background='var(--muted)';}};
+  const pauseHidden=()=>{replayPlaying=false;if(retryCountdown>0){retryCountdown=0;$('play').textContent='▶ 계속';$('start-hint').hidden=true;}clearInputs();if(running){running=false;run.paused=true;$('play').textContent='▶ 계속';$('run-status').textContent='일시정지';$('run-dot').style.background='var(--muted)';}};
   window.addEventListener('blur',pauseHidden);document.addEventListener('visibilitychange',()=>{if(document.hidden)pauseHidden();});
   window.addEventListener('hashchange',()=>navigate(location.hash.slice(1)));
-  $('export').onclick=()=>{if(!history.length){toast('완료한 주행이 없습니다.');return;}const cols=['date','preset','mission','mode','vehicle','aids','model_version','surface','drive','start_kmh','input','timescale','paused','valid','reason','total_s','entry_s','rotation_s','exit_s','offtrack_s','front_over_demand_pct','max_body_slip_deg','stop_m'];const rows=history.map(r=>[r.at,r.config.preset,r.config.missionId||'',r.config.mode||'drive',r.config.vehicle,r.config.aids,r.config.modelVersion,r.config.surface,r.config.drive,r.config.startSpeed,r.config.input,r.config.timeScale,r.paused,r.valid,r.reason,r.time,...r.sectors,r.offTime,r.frontPct,r.maxBeta,r.stopDistance]);const csv='\ufeff'+[cols,...rows].map(row=>row.map(v=>'"'+String(v??'').replaceAll('"','""')+'"').join(',')).join('\r\n');const url=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8;'}));const a=document.createElement('a');a.href=url;a.download='grip-lab-runs.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
+  $('export').onclick=()=>{if(!history.length){toast('완료한 주행이 없습니다.');return;}const cols=['date','preset','mission','mode','vehicle','aids','model_version','scene_version','surface','drive','start_kmh','input','timescale','paused','valid','reason','total_s','entry_s','rotation_s','exit_s','offtrack_s','front_over_demand_pct','max_body_slip_deg','stop_m'];const rows=history.map(r=>[r.at,r.config.preset,r.config.missionId||'',r.config.mode||'drive',r.config.vehicle,r.config.aids,r.config.modelVersion,r.config.sceneVersion||'v04',r.config.surface,r.config.drive,r.config.startSpeed,r.config.input,r.config.timeScale,r.paused,r.valid,r.reason,r.time,...r.sectors,r.offTime,r.frontPct,r.maxBeta,r.stopDistance]);const csv='\ufeff'+[cols,...rows].map(row=>row.map(v=>'"'+String(v??'').replaceAll('"','""')+'"').join(',')).join('\r\n');const url=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8;'}));const a=document.createElement('a');a.href=url;a.download='grip-lab-runs.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
   function launchLesson(preset,vehicle){freeLab();if(vehicle)selectVehicle(vehicle);$('preset').value=presetIds.includes(preset)?preset:'corner';$('preset').dispatchEvent(new Event('change'));window.scrollTo({top:0,behavior:'smooth'});}
   GripLessons.mount($('lessons-root'),{onLaunch:launchLesson,onProgress:()=>{}});
   globalThis.GripGuide?.mount($('guide-root'),{onLaunch:launchLesson});
-  globalThis.GripTransfer?.mount($('transfer-root'),{onLaunch:launchLesson});
+  transfer=globalThis.GripTransfer?.mount($('transfer-root'),{onLaunch:launchLesson});
   academy=globalThis.GripAcademy?.mount($('academy-root'),{onStart:id=>startMission(id),onObserve:id=>startMission(id,true),onFree:freeLab,onGuide:()=>navigate('guide')});
   reset();setInput('keyboard');navigate(location.hash.slice(1)||'home');
   function frame(now){
     const dt=lastTime?Math.min((now-lastTime)/1000,.05):0;lastTime=now;
+    if(retryCountdown>0&&['lab','practice'].includes(page)){retryCountdown=Math.max(0,retryCountdown-dt);$('start-hint').querySelector('strong').textContent=Math.ceil(retryCountdown)+' · 같은 코너 다시';if(retryCountdown===0){running=true;$('start-hint').hidden=true;$('play').textContent='Ⅱ 일시정지';$('run-status').textContent='구간 반복 중';lockSettings(true);}}
     if(running){const simDt=dt*Number($('time-scale').value);if(observe)observeStep(simDt);else inputStep(dt);GripPhysics.step(state,controls,simDt,{surface:$('surface').value,drive:$('drive').value,aids:$('aids').value});measure(simDt);if(state.time-sampleTime>=.04){sampleTime=state.time;samples.push({t:state.time,...controls,speed:state.speed});while(samples.length&&samples[0].t<state.time-12)samples.shift();trail.push({x:state.x,y:state.y});if(trail.length>1500)trail.shift();}}
     if(done&&replayPlaying&&replayWindow&&['lab','practice'].includes(page)){
       reviewTime+=dt*replayRate;
       if(reviewTime>=replayWindow.to){const span=replayWindow.to-replayWindow.from;if($('review-loop').checked&&span>.01)reviewTime=replayWindow.from+(reviewTime-replayWindow.from)%span;else{reviewTime=replayWindow.to;replayPlaying=false;}}
     }
-    const review=done&&reviewTime!==null&&fullTrace.length?reviewSample(reviewTime):null;const view=review?asState(review):state;
+    const review=done&&reviewActive&&reviewTime!==null&&fullTrace.length?reviewSample(reviewTime):null;const view=review?asState(review):state;
     if(now-uiTime>75){uiTime=now;updateTelemetry(view);}
-    if(['lab','practice'].includes(page)){GripRenderer.track($('track'),view,scene,{follow,path:$('show-path').checked,trail,progress:review?.s??run.progress,review});GripRenderer.grip($('grip'),view);GripRenderer.trace($('trace'),samples);if(done&&review){drawReplayVehicles(review,referenceRun?GripReplay.atDistance(referenceRun.trace,review.s):null);if(now-uiTime<16)renderReview();}}
+    if(['lab','practice'].includes(page)){GripRenderer.track($('track'),view,scene,{follow,path:$('show-path').checked,referenceTrace:referenceRun?.trace,referenceLine:$('show-reference').checked,trail,progress:review?.s??run.progress,review});GripRenderer.grip($('grip'),view);GripRenderer.trace($('trace'),samples);if(done&&reviewTime!==null&&!$('result-dock').hidden){const r=reviewSample(reviewTime);drawReplayVehicles(r,referenceRun?GripReplay.atDistance(referenceRun.trace,r.s):null);if(now-uiTime<16)renderReview();}}
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);

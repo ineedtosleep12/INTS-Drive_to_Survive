@@ -15,12 +15,41 @@
   const FREE=['drift','figure8','playground'];
   const CAVEAT='같은 코스 거리에서 관측한 입력을 비교합니다. 예시는 이 교육용 모델의 조작 방법 하나이며 최적 주행이나 실패 원인을 확정하지 않습니다.';
   const zero=()=>({steer:0,throttle:0,brake:0,handbrake:0,clutch:0});
+  const circuitPlans=new WeakMap();
+  const isCircuit=scene=>scene?.type==='circuit';
   function pointOnScene(scene,distance){
     const points=scene.points;
     let lo=1,hi=points.length-1;
     while(lo<hi){const mid=(lo+hi)>>1;if(points[mid].s<distance)lo=mid+1;else hi=mid;}
     const a=points[lo-1],b=points[lo],f=clamp((distance-a.s)/(b.s-a.s),0,1);
     return {x:a.x+(b.x-a.x)*f,y:a.y+(b.y-a.y)*f,heading:Math.atan2(b.y-a.y,b.x-a.x)};
+  }
+  function circuitPlan(state,scene){
+    let plans=circuitPlans.get(scene);if(!plans){plans=new Map();circuitPlans.set(scene,plans);}
+    const p=state.params,key=p.id+'|'+state.surface;
+    if(plans.has(key))return plans.get(key);
+    const mu=(Physics.surfaces[state.surface]?.mu||1.08)*p.muScale;
+    const braking=Math.min(p.brakeForceRatio*9.81*.86,mu*9.81*1.1);
+    const roadProfile=p.downforceCoefficient<1;
+    const planningBrake=roadProfile?Math.min(braking,mu*2.5):Math.min(braking,6);
+    const maxSpeed=Math.min(75,Math.cbrt(p.power*p.powerEfficiency/Math.max(p.drag,.1)));
+    const points=scene.points.map(point=>{
+      const a=pointOnScene(scene,point.s-4),b=pointOnScene(scene,point.s+4);
+      const curvature=Math.abs(wrap(b.heading-a.heading))/8;
+      const available=mu*9.81*(roadProfile?.28:.38);
+      // A conservative model envelope, including some speed-squared aero.
+      // It plans braking; the physical vehicle still has to execute every input.
+      const denominator=Math.max(curvature-mu*p.downforceCoefficient/p.mass*.25,.0001);
+      return {s:point.s,speed:Math.min(maxSpeed,Math.sqrt(available/denominator))};
+    });
+    for(let i=points.length-2;i>=0;i--){const a=points[i],b=points[i+1];a.speed=Math.min(a.speed,Math.sqrt(b.speed*b.speed+2*planningBrake*(b.s-a.s)));}
+    const result={points,braking,maxSpeed};plans.set(key,result);return result;
+  }
+  function plannedSpeed(plan,s){
+    const points=plan.points;let lo=1,hi=points.length-1;
+    while(lo<hi){const mid=(lo+hi)>>1;if(points[mid].s<s)lo=mid+1;else hi=mid;}
+    const a=points[lo-1],b=points[lo],f=clamp((s-a.s)/(b.s-a.s),0,1);
+    return a.speed+(b.speed-a.speed)*f;
   }
   function controls(state,scene,mission,progress,previousControls,dt){
     if(!state||!scene?.points||scene.points.length<2||!state.params)return zero();
@@ -30,22 +59,24 @@
     const angle=wrap(Math.atan2(target.y-state.y,target.x-state.x)-state.heading);
     const steer=clamp(Math.atan(2*state.params.wheelbase*Math.sin(angle)/look)/state.params.steeringLimit,-.9,.9);
     const cornerSpeed=(mission?.demoSpeedKph||45)/3.6;
-    let speed=cornerSpeed;
+    const circuit=isCircuit(scene),plan=circuit?circuitPlan(state,scene):null;
+    let speed=circuit?plannedSpeed(plan,progress+8):cornerSpeed;
     // Guided corners retain approach speed, then decelerate toward the entry
     // target. The 20 m settling distance lets the physical feedback controller
     // release braking before turn-in; it is not a real-world braking marker.
     if(mission?.entrySpeedRange&&finite(scene.gates?.entry)&&progress<scene.gates.entry){
-      const approach=(mission.startSpeedKph||mission.demoSpeedKph)/3.6;
-      speed=Math.min(approach,Math.sqrt(cornerSpeed*cornerSpeed+2*3.8*Math.max(0,scene.gates.entry-progress-20)));
+      const approach=(mission.approachSpeedKph||mission.startSpeedKph||mission.demoSpeedKph)/3.6;
+      const entryEnvelope=Math.min(approach,Math.sqrt(cornerSpeed*cornerSpeed+2*(circuit?plan.braking:3.8)*Math.max(0,scene.gates.entry-progress-20)));
+      speed=circuit&&mission.id==='monza_lesmo'?Math.min(speed,entryEnvelope):entryEnvelope;
     }
     // Lesmo's exercise explicitly asks for a faster exit. Allow acceleration in
     // the last third of the rotation interval, still under curvature limits.
-    if(mission?.id==='monza_lesmo'&&progress>scene.gates.entry+(scene.gates.exit-scene.gates.entry)*.65){
+    if(!circuit&&mission?.id==='monza_lesmo'&&progress>scene.gates.entry+(scene.gates.exit-scene.gates.entry)*.65){
       speed=Math.max(cornerSpeed,mission.entrySpeedRange[1]/3.6);
     }
     // Curvature anticipation can lower this target earlier when geometry needs
     // it, including an upstream bend in an extended approach segment.
-    for(let ahead=0;ahead<=65;ahead+=5){
+    for(let ahead=0;!circuit&&ahead<=65;ahead+=5){
       const a=pointOnScene(scene,progress+ahead),b=pointOnScene(scene,progress+ahead+8);
       const curvature=Math.abs(wrap(b.heading-a.heading))/8;
       const limit=Math.sqrt((scene.preset==='rally_hairpin'?1.8:3.4)/Math.max(curvature,.001));
@@ -53,7 +84,7 @@
     }
     const error=speed-state.speed,last=finite(previous.steer)?previous.steer:0;
     return {steer:last+clamp(steer-last,-seconds*2,seconds*2),
-      throttle:error>0?clamp(error*.3+.05,0,.6):0,brake:error<-.15?clamp(-error*.16,0,.7):0,handbrake:0,clutch:0};
+      throttle:error>0?clamp(error*.3+.05,0,circuit?clamp(1-Math.pow(Math.max(state.utilF||0,state.utilR||0),2),.03,1):.6):0,brake:error<-.15?clamp(-error*(circuit?.5:.16),0,circuit?1:.7):0,handbrake:0,clutch:0};
   }
   function nearest(scene,state,progress){
     let best={distance:Infinity,progress:0};
@@ -108,7 +139,7 @@
       spinTime=Math.abs(state.beta)*RAD>65&&state.speed>3?spinTime+DT:0;
       if((scene.preset==='brake'||scene.trainingId==='intro_brake'||mission?.id==='intro_brake')&&state.speed<.1&&state.time>1)reason='stop';
       else if(!FREE.includes(scene.preset)&&progress>=scene.total-2&&near.distance<scene.width)reason='finish';
-      else if((mission||scene.trainingId)&&offTime>2)reason='offtrack';
+      else if((mission||scene.trainingId||isCircuit(scene))&&offTime>2)reason='offtrack';
       else if(spinTime>1)reason='spin';
       else if(near.distance>70)reason='far';
       else reason='timeout';
@@ -230,7 +261,30 @@
     if(lastRelease)text.push('예시의 제동 해제 표시는 '+lastRelease.s.toFixed(1)+' m 지점입니다.');
     return {available:true,headline,explanation:text.join(' '),differences,events:nearby,nextAction,caveat:CAVEAT};
   }
-  const api=Object.freeze({controls,generate,atTime,atDistance,failureWindow,compare,events});
+  function cornerGuide(scene,reference){
+    if(!isCircuit(scene)||!Array.isArray(scene.corners))return [];
+    const trace=reference?.trace||[],eventList=reference?.events||events(trace);
+    return scene.corners.map((corner,index)=>{
+      const turnReference=scene.turnInReferences?.find(r=>r.cornerId===corner.id);
+      const entryS=turnReference?.s??Math.max(0,corner.s-80);
+      const previous=scene.corners[index-1],next=scene.corners[index+1];
+      const approachS=Math.max(0,entryS-400,previous?previous.s+Math.min(120,(corner.s-previous.s)*.45):0);
+      const targetedGate=scene.training&&scene.trainingId!=='whole_monza'&&turnReference&&finite(scene.gates?.exit);
+      const exitS=targetedGate?scene.gates.exit:Math.min(scene.total,corner.s+Math.min(120,next?(next.s-corner.s)*.45:120));
+      const entry=atDistance(trace,entryS),exit=atDistance(trace,exitS);
+      const available=!!reference?.complete&&!!entry&&!!exit&&(!scene.training||!!turnReference);
+      const approach=trace.filter(p=>p.s>=approachS&&p.s<=entryS&&finite(p.speed));
+      const rotation=trace.filter(p=>p.s>=entryS&&p.s<=exitS&&finite(p.speed));
+      const brake=eventList.find(e=>e.type==='brake_start'&&e.s>=approachS&&e.s<entryS);
+      return {id:corner.id,name:corner.name,cornerName:corner.name,available,modelOnly:true,
+        approachS,entryS,exitS,approachSpeed:available&&approach.length?Math.max(...approach.map(p=>p.speed)):null,
+        entrySpeed:available?entry.speed:null,minSpeed:available&&rotation.length?Math.min(entry.speed,exit.speed,...rotation.map(p=>p.speed)):null,
+        exitSpeed:available?exit.speed:null,brakeDistance:available&&brake?entryS-brake.s:null,
+        definition:'접근: 회전 기준선 앞 최대 400 m의 최고 속도(앞 코너 탈출 이후) · 진입: 회전 기준선 · 최저: 진입~탈출 · 탈출: 코너 대표점 뒤 최대 120 m(다음 코너 전). 개별 훈련은 표시된 탈출선을 사용합니다. 연결 코너는 한 구간으로 표시합니다.',
+        note:'현재 차종·노면의 교육용 모델 시범에서 측정했습니다. 실제 게임의 해당 코너 속도·최적 주행값은 아직 보정하지 않았습니다.'};
+    });
+  }
+  const api=Object.freeze({controls,generate,atTime,atDistance,failureWindow,compare,events,cornerGuide});
   root.GripReplay=api;
   if(typeof module!=='undefined'&&module.exports)module.exports=api;
 })(typeof globalThis!=='undefined'?globalThis:this);

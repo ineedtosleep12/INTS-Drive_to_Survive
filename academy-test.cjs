@@ -71,7 +71,20 @@ assert(ui.press('Home', 'rallydrift'));
 assert.equal(ui.getFocused(), '#academy-tab-foundation');
 assert.equal(ui.press('Escape', 'foundation'), false);
 
-storage.set(key, JSON.stringify({intro_brake:{passed:true,mode:'observe'},corner_release:{passed:false,mode:'drive'},monza_t1:{passed:true,mode:'drive'},unknown:{passed:true,mode:'drive'}}));
+const revisedCircuitIds=['monza_t1','monza_lesmo','nurb_t1','whole_monza'];
+const oldProgress={intro_brake:{passed:true,mode:'drive'},rally_hairpin:{passed:true,mode:'drive'},...Object.fromEntries(revisedCircuitIds.map(id=>[id,{passed:true,mode:'drive'}]))};
+const storedOldProgress=JSON.stringify(oldProgress);storage.set(key,storedOldProgress);app.refresh();
+assert(ui.root.innerHTML.includes('최근 목표 달성 <strong>2 / 8</strong>'),'legacy circuit passes do not satisfy revised conditions; unchanged drills stay compatible');
+assert.equal(storage.get(key),storedOldProgress,'view migration must preserve the original stored progress');
+ui.click('category','circuit');assert(!ui.root.innerHTML.includes('academy-badge passed'),'old circuit cards invite a fresh attempt');
+for(const id of revisedCircuitIds){
+  storage.set(key,JSON.stringify({...oldProgress,[id]:{passed:true,mode:'drive',sceneVersion:'v05'}}));app.refresh();
+  assert(ui.root.innerHTML.includes('최근 목표 달성 <strong>3 / 8</strong>'),'each revised circuit accepts its current-version pass');
+}
+storage.set(key,JSON.stringify({monza_t1:{passed:true,mode:'drive',sceneVersion:'v04'},whole_monza:{passed:true,mode:'drive',sceneVersion:'future'}}));app.refresh();
+assert(ui.root.innerHTML.includes('최근 목표 달성 <strong>0 / 8</strong>'),'neither older nor unknown circuit conditions count as current');
+ui.click('category','foundation');
+storage.set(key, JSON.stringify({intro_brake:{passed:true,mode:'observe'},corner_release:{passed:false,mode:'drive'},monza_t1:{passed:true,mode:'drive',sceneVersion:'v05'},unknown:{passed:true,mode:'drive'}}));
 app.refresh();
 assert(ui.root.innerHTML.includes('최근 목표 달성 <strong>1 / 8</strong>'));
 assert(ui.root.innerHTML.includes('시범 확인 · 직접 도전'));

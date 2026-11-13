@@ -4,6 +4,7 @@
   const C={bg:'#0d151b',grid:'#1b2932',road:'#26343e',edge:'#52636d',text:'#a6bac8',lime:'#b5f36b',cyan:'#6dd6eb',coral:'#ff907e',grey:'#c1cbd1'};
   const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
   const number=(v,f=0)=>Number.isFinite(v)?v:f;
+  const referencePaths=new WeakMap();
   function surface(canvas){
     if(!canvas || !canvas.getContext) return null;
     const rect=canvas.getBoundingClientRect(),w=rect.width,h=rect.height;
@@ -80,6 +81,47 @@
       ctx.font='bold 14px ui-monospace, monospace';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillStyle='#111b1b';ctx.fillText(String(Math.round(board.distance)),x,y+.5);
     }
   }
+  function referencePath(ctx,trace,toScreen,w,h,options){
+    if(options.referenceLine===false||!Array.isArray(trace)||trace.length<2)return;
+    let cached=referencePaths.get(trace);
+    if(!cached||cached.length!==trace.length){
+      const points=[];let last=null,distance=0,nextArrow=25;
+      for(let i=0;i<trace.length;i++){
+        const sample=trace[i];
+        if(!sample||!Number.isFinite(sample.x)||!Number.isFinite(sample.y)){last=null;points.push(null);continue;}
+        const mode=sample.brake>.08?'brake':sample.throttle>.35?'throttle':'coast';
+        const gap=last?Math.hypot(sample.x-last.x,sample.y-last.y):0;
+        if(last&&gap<2.5&&last.mode===mode&&i<trace.length-1)continue;
+        distance+=gap;
+        const point={x:sample.x,y:sample.y,mode,arrow:distance>=nextArrow};
+        if(point.arrow)nextArrow=distance+45;
+        points.push(point);last=point;
+      }
+      cached={length:trace.length,points};referencePaths.set(trace,cached);
+    }
+    const colors={brake:C.coral,coast:C.cyan,throttle:C.lime};
+    let segment=[],mode=null;
+    const flush=()=>{line(ctx,segment,'#071117bb',5);line(ctx,segment,colors[mode]||C.cyan,2.6);segment=[];};
+    for(const point of cached.points){
+      if(!point){flush();mode=null;continue;}
+      const screen=toScreen(point);
+      if(mode&&point.mode!==mode){segment.push(screen);flush();}
+      segment.push(screen);mode=point.mode;
+    }
+    flush();
+    for(let i=1;i<cached.points.length;i++){
+      const point=cached.points[i],previous=cached.points[i-1];if(!point?.arrow||!previous)continue;
+      const p=toScreen(point),a=toScreen(previous);
+      if(p.x<12||p.x>w-12||p.y<42||p.y>h-40)continue;
+      arrow(ctx,p.x,p.y,Math.atan2(p.y-a.y,p.x-a.x),10,colors[point.mode],1.5);
+    }
+    if(!options.review){
+      label(ctx,'참고 주행선',14,82,C.text,'left');
+      for(const [i,text,color] of [[0,'제동',C.coral],[1,'유지',C.cyan],[2,'가속',C.lime]]){
+        const x=14+i*57;line(ctx,[{x,y:98},{x:x+12,y:98}],color,2.6);label(ctx,text,x+18,98,color,'left');
+      }
+    }
+  }
   function track(canvas,state,scene,options={}){
     const view=surface(canvas);if(!view)return;
     const {ctx,w,h}=view,s=state||{},points=(scene&&scene.points)||[],roadWidth=number(scene&&scene.width,12);
@@ -90,7 +132,13 @@
     const oriented=p=>({x:number(p.x)*cos-number(p.y)*sin,y:number(p.x)*sin+number(p.y)*cos});
     const orientedPoints=points.map(oriented),camera=options.cameraState||s;
     let scale,cx,cy;
-    if(options.follow){scale=Math.min(w,h*1.25)/Math.max(100,number(camera.speed)*7);const lead=Math.min(65,number(camera.speed)*1.2),direction=number(camera.heading)+number(camera.beta),center=oriented({x:number(camera.x)+Math.cos(direction)*lead,y:number(camera.y)+Math.sin(direction)*lead});cx=center.x;cy=center.y;}
+    if(options.follow){
+      // World meters per pixel stay fixed for the entire scene, including replay.
+      // Only position and heading move the camera; braking cannot resize the road.
+      const span=Math.max(80,number(scene?.cameraSpan,number(scene?.total)>350?340:160)),lead=Math.min(80,span*.2353),direction=number(camera.heading);
+      scale=h/span;
+      const center=oriented({x:number(camera.x)+Math.cos(direction)*lead,y:number(camera.y)+Math.sin(direction)*lead});cx=center.x;cy=center.y;
+    }
     else{
       let minX=0,maxX=40,minY=0,maxY=20;
       if(orientedPoints.length){minX=maxX=orientedPoints[0].x;minY=maxY=orientedPoints[0].y;for(const p of orientedPoints){minX=Math.min(minX,p.x);maxX=Math.max(maxX,p.x);minY=Math.min(minY,p.y);maxY=Math.max(maxY,p.y);}}
@@ -114,6 +162,7 @@
     line(ctx,screenPoints,C.edge,roadWidth*scale+2);
     line(ctx,screenPoints,C.road,roadWidth*scale);
     if(options.path!==false)line(ctx,screenPoints,'#6dd6eb65',1.3,[6,9]);
+    referencePath(ctx,options.referenceTrace,toScreen,w,h,options);
     if(points.length>1){
       gate(ctx,atDistance(points,0),roadWidth,toScreen,'#8fa7b5','START',false);
       if(!['drift','figure8','playground'].includes(scene.preset))gate(ctx,atDistance(points,number(scene.total,Infinity)),roadWidth,toScreen,'#bdcbd4','FINISH',true);
@@ -145,14 +194,18 @@
     const meters=scale>5?10:scale>1?20:scale>.2?100:500,len=meters*scale,barX=w-24-len,barY=h-22;
     line(ctx,[{x:barX,y:barY-3},{x:barX,y:barY},{x:barX+len,y:barY},{x:barX+len,y:barY-3}],'#708795',1);
     ctx.fillStyle='#708795';ctx.font='9px ui-monospace, monospace';ctx.textAlign='center';ctx.fillText(`${meters} m`,barX+len/2,barY-7);
-    if(scene.total>700&&options.follow&&points.length>2){
-      const mw=140,mh=92,mx=w-mw-16,my=h-mh-48;
+    if(options.follow&&options.minimap!==false&&points.length>2){
+      const mw=Math.min(140,w*.3),mh=Math.min(92,h*.25),mx=w-mw-12,my=h-mh-48;
       let loX=Infinity,hiX=-Infinity,loY=Infinity,hiY=-Infinity;for(const t of orientedPoints){loX=Math.min(loX,t.x);hiX=Math.max(hiX,t.x);loY=Math.min(loY,t.y);hiY=Math.max(hiY,t.y);}
       const ms=Math.min((mw-16)/Math.max(1,hiX-loX),(mh-16)/Math.max(1,hiY-loY)),ox=mx+mw/2,oy=my+mh/2;
-      const mini=t=>{const p=oriented(t);return{x:ox+(p.x-(loX+hiX)/2)*ms,y:oy-(p.y-(loY+hiY)/2)*ms};};
+      const miniOriented=p=>({x:ox+(p.x-(loX+hiX)/2)*ms,y:oy-(p.y-(loY+hiY)/2)*ms});
+      const mini=t=>miniOriented(oriented(t));
       ctx.fillStyle='#081117dc';ctx.fillRect(mx,my,mw,mh);ctx.strokeStyle='#344550';ctx.lineWidth=.7;ctx.strokeRect(mx,my,mw,mh);line(ctx,points.map(mini),'#829ba9',1.3);
+      ctx.save();ctx.beginPath();ctx.rect(mx,my,mw,mh);ctx.clip();
+      const corner=miniOriented({x:x0,y:y1});ctx.strokeStyle='#6dd6eb65';ctx.lineWidth=.8;ctx.strokeRect(corner.x,corner.y,(x1-x0)*ms,(y1-y0)*ms);ctx.restore();
       const mp=mini(s);ctx.beginPath();ctx.arc(mp.x,mp.y,3,0,Math.PI*2);ctx.fillStyle=C.lime;ctx.fill();
-      const next=(scene.corners||[]).find(c=>c.s>number(options.progress)+5);if(next&&!options.review)label(ctx,next.name+' · 모델 거리 '+Math.round(next.s-number(options.progress))+' m',w/2,22,C.cyan);
+      ctx.fillStyle=C.text;ctx.textAlign='left';ctx.font='8px ui-monospace, monospace';ctx.fillText('MAP',mx+5,my+9);
+      const next=(scene.corners||[]).find(c=>c.s>number(options.progress)+5);if(next&&!options.review&&w>=480)label(ctx,next.name+' · 모델 거리 '+Math.round(next.s-number(options.progress))+' m',w/2,22,C.cyan);
     }
   }
   function grip(canvas,state){
@@ -200,8 +253,8 @@
     const to=Number.isFinite(options.toS)&&options.toS>from?options.toS:Math.max(from+1,...all.map(s=>s.s));
     const plotWidth=right-left,atX=s=>left+(s-from)/(to-from)*plotWidth;
     ctx.fillStyle=C.bg;ctx.fillRect(0,0,w,h);ctx.textAlign='left';ctx.textBaseline='middle';ctx.font='10px "Malgun Gothic", sans-serif';
-    line(ctx,[{x:left,y:11},{x:left+20,y:11}],C.lime,2);ctx.fillStyle=C.lime;ctx.fillText('내 입력',left+27,11);
-    line(ctx,[{x:left+93,y:11},{x:left+113,y:11}],C.cyan,2,[5,4]);ctx.fillStyle=C.cyan;ctx.fillText('시범',left+120,11);
+    line(ctx,[{x:left,y:11},{x:left+20,y:11}],C.lime,2);ctx.fillStyle=C.lime;ctx.fillText(options.playerLabel||'내 입력',left+27,11);
+    line(ctx,[{x:left+93,y:11},{x:left+113,y:11}],C.cyan,2,[5,4]);ctx.fillStyle=C.cyan;ctx.fillText(options.referenceLabel||'시범',left+120,11);
     const rows=[{field:'brake',title:'브레이크',y:top,lo:0,hi:1,ticks:[[0,'0%'],[.5,'50%'],[1,'100%']]},{field:'steer',title:'조향 방향',y:top+rowHeight+gap,lo:-1,hi:1,ticks:[[-1,'→ 100%'],[0,'중립'],[1,'← 100%']]}];
     for(const row of rows){
       const atY=value=>row.y+rowHeight-(value-row.lo)/(row.hi-row.lo)*rowHeight;

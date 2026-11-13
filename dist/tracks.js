@@ -77,13 +77,27 @@
     }
     result.push({...dense[dense.length-1]});return result;
   }
+  function roundCircuit(points){
+    // A distance-spaced triangular filter removes artificial curvature spikes
+    // at hand-drawn control nodes. This is still a schematic, not survey data.
+    const count=points.length-1;
+    return points.map((p,i)=>{
+      if(i<6||count-i<6)return {...p};
+      let x=0,y=0,total=0;
+      for(let offset=-5;offset<=5;offset++){
+        const weight=6-Math.abs(offset),q=points[(i+offset+count)%count];
+        x+=q.x*weight;y+=q.y*weight;total+=weight;
+      }
+      return {x:x/total,y:y/total};
+    });
+  }
   function make(id){
     if(!Object.prototype.hasOwnProperty.call(definitions,id))return null;
     const d=definitions[id];
     const controls=d.nodes.map(xy),dense=smooth(controls,d.closed),rawLength=measure(dense);
     const initialScale=d.length?d.length/rawLength:1;
     for(const p of dense){p.x*=initialScale;p.y*=initialScale;}
-    const points=resample(dense,5),sampleLength=measure(points),correction=d.length?d.length/sampleLength:1;
+    const sampled=resample(dense,5),points=d.type==='circuit'?roundCircuit(sampled):sampled,sampleLength=measure(points),correction=d.length?d.length/sampleLength:1;
     const origin={x:points[0].x,y:points[0].y};
     for(const p of points){p.x=(p.x-origin.x)*correction;p.y=(p.y-origin.y)*correction;}
     if(d.closed){points[points.length-1].x=0;points[points.length-1].y=0;}
@@ -104,7 +118,7 @@
       brakingBoardNote:d.type==='circuit'?BOARD_NOTE:'',
       turnInReferenceNote:d.type==='circuit'?'코너 대표 위치 앞에 학습용 회전 기준선을 정의했습니다. 표지판 숫자는 이 모델 중심선을 따라 기준선까지 남은 거리이며 실제 회전·제동 위치를 뜻하지 않습니다.':'',
       turnInReferences:turnInReferences.map(ref=>({...ref})),
-      notes:d.url?APPROX+' · 공식 공개 코너 순서와 개요도를 참고해 직접 작성한 중심선입니다. 전체 길이만 공식 길이에 맞췄으며 코너 위치·반경·일정한 12 m 폭은 학습용 근사입니다. 고저차·뱅킹·캠버·연석·실제 제동 지점은 재현하지 않습니다.':'직접 설계한 가상 평면 연습장입니다. 실제 도로·실측 코스를 나타내지 않습니다.'};
+      notes:d.url?APPROX+' · 공식 공개 코너 순서와 개요도를 참고해 직접 작성한 중심선입니다. 인공적인 급곡률을 완화했으며 전체 길이만 공식 길이에 맞췄습니다. 코너 위치·반경·일정한 12 m 폭은 학습용 근사입니다. 고저차·뱅킹·캠버·연석·실제 제동 지점은 재현하지 않습니다.':'직접 설계한 가상 평면 연습장입니다. 실제 도로·실측 코스를 나타내지 않습니다.'};
     return {preset:id,id,name:d.name,type:d.type,description:d.description,points,width:d.width,total,closed:d.closed,startHeading:Math.atan2(points[1].y,points[1].x),corners,source,timeLimit:d.timeLimit,freePractice:!!d.freePractice,scale,
       brakingBoards,turnInReferences,brakingBoardNote:d.type==='circuit'?BOARD_NOTE:''};
   }

@@ -44,9 +44,21 @@ for(const sign of boards.texts.filter(t=>['200','150','100','50'].includes(t.tex
 assert.equal(boards.fills.filter(f=>f.color==='#f0f3eb').length,4,'signs have high-contrast white boards');
 const long={...scene,total:2000},overview=drawing();R.track(overview.canvas,stateAt(scene),long);assert(!overview.texts.some(t=>t.color==='#111b1b'),'long-course overview suppresses sign clutter');
 const follow=drawing();R.track(follow.canvas,stateAt(scene,30),long,{follow:true,progress:150});assert(follow.texts.some(t=>t.color==='#111b1b'),'follow camera shows local boards');
-const wideFollow=drawing(900,455);R.track(wideFollow.canvas,{...stateAt(scene),speed:70/3.6},scene,{follow:true});
-const wideScale=wideFollow.strokes.find(s=>s.color==='#26343e').width/scene.width,forwardSpan=455/wideScale;
-assert(forwardSpan>=100&&forwardSpan<=150,'a wide main arena keeps 100–150 m of vertical range at circuit spawn speed');
+const circuit=straight(0,500),wideFollow=drawing(900,455);R.track(wideFollow.canvas,{...stateAt(circuit),speed:250/3.6},circuit,{follow:true});
+const wideScale=wideFollow.strokes.find(s=>s.color==='#26343e').width/circuit.width,verticalSpan=455/wideScale;
+assert.equal(verticalSpan,340,'circuit follow view has a fixed 340 m vertical range');
+assert(wideFollow.calls.find(c=>c.kind==='translate').y/wideScale>=250,'at least 250 m are visible ahead at the initial heading');
+for(const speed of [0,5,70/3.6,250/3.6,350/3.6]){
+  const speedView=drawing(900,455);R.track(speedView.canvas,{...stateAt(circuit),speed,beta:.4},circuit,{follow:true});
+  assert.deepEqual(speedView.strokes.find(s=>s.color==='#26343e'),wideFollow.strokes.find(s=>s.color==='#26343e'),'speed and slip cannot change camera road size or position');
+  assert.deepEqual(speedView.calls.filter(c=>c.kind==='translate'),wideFollow.calls.filter(c=>c.kind==='translate'),'car body and wheels keep a fixed screen size while braking');
+}
+const shortFollow=drawing();R.track(shortFollow.canvas,stateAt(scene),scene,{follow:true});
+assert(shortFollow.texts.some(t=>t.text==='MAP'),'short guided sections also provide a separate minimap');
+const smallReplay=drawing(168,210);R.track(smallReplay.canvas,stateAt(scene),scene,{follow:true,minimap:false,review:{t:3}});
+assert(!smallReplay.texts.some(t=>t.text==='MAP'),'compact replay panes can omit their minimap to keep the car clear');
+const customSpan={...circuit,cameraSpan:200},customView=drawing();R.track(customView.canvas,stateAt(customSpan),customSpan,{follow:true});
+assert.equal(480/(customView.strokes.find(s=>s.color==='#26343e').width/customSpan.width),200,'scene span can be chosen before driving');
 
 const player=stateAt(scene,30),reference={...player,x:player.x+3,y:player.y-2},own=drawing(),ref=drawing();
 R.track(own.canvas,player,scene,{follow:true,cameraState:player,review:{t:4},reviewLabel:'내 주행'});
@@ -54,6 +66,19 @@ R.track(ref.canvas,reference,scene,{follow:true,cameraState:player,review:{t:8},
 assert.deepEqual(own.strokes.find(s=>s.color==='#26343e').points,ref.strokes.find(s=>s.color==='#26343e').points,'comparison panes share camera, scale and road position');
 assert(ref.texts.some(t=>t.text==='시범 · 8.00 s'));assert(own.texts.some(t=>t.text==='내 주행 · 4.00 s'));
 assert(ref.fills.some(f=>f.color==='#6dd6eb')||ref.strokes.some(s=>s.color==='#6dd6eb'),'reference color used');
+
+const guide=scene.points.slice(5,55).map((p,i)=>({...p,y:p.y+2,brake:i<15?.5:0,throttle:i>30?.7:0})),guideBefore=JSON.stringify(guide),guideView=drawing();
+R.track(guideView.canvas,player,scene,{follow:true,referenceTrace:guide});
+assert(guideView.texts.some(t=>t.text==='참고 주행선'),'guide is explicitly a reference, never a claimed fastest line');
+for(const color of ['#ff907e','#6dd6eb','#b5f36b'])assert(guideView.strokes.some(s=>s.color===color&&s.width===2.6&&s.points.length>2),'guide separates brake, neutral and acceleration sections');
+assert(guideView.strokes.some(s=>s.width===1.5&&s.points.length===5),'reference path has forward direction arrows');
+const guideScale=guideView.strokes.find(s=>s.color==='#26343e').width/scene.width,guideStart=guideView.strokes.find(s=>s.color==='#ff907e'&&s.width===2.6).points[0],centerStart=guideView.strokes.find(s=>s.color==='#26343e').points[5];
+assert(Math.abs(guideStart.x-centerStart.x+2*guideScale)<1e-8,'reference trajectory is transformed in the same world coordinates as the road');
+assert.equal(JSON.stringify(guide),guideBefore,'reference rendering cannot modify recorded physics');
+const hiddenGuide=drawing();R.track(hiddenGuide.canvas,player,scene,{follow:true,referenceTrace:guide,referenceLine:false});
+assert(!hiddenGuide.texts.some(t=>t.text==='참고 주행선'),'reference overlay can be disabled independently');
+const guideReplay=drawing();R.track(guideReplay.canvas,player,scene,{follow:true,referenceTrace:guide,cameraState:player,review:{t:4}});
+assert.deepEqual(guideReplay.strokes.filter(s=>s.width===2.6&&s.points.length>2),guideView.strokes.filter(s=>s.width===2.6&&s.points.length>2),'replay and live views align the same guide trajectory');
 
 const data=[{s:0,brake:1,steer:0},{s:25,brake:.7,steer:.5},{s:50,brake:0,steer:1},{s:75,brake:0,steer:-1},{s:100,brake:0,steer:0}],chart=drawing(640,230);
 R.comparison(chart.canvas,data,data.map(s=>({...s,brake:s.brake*.5,steer:-s.steer})),{fromS:0,toS:100,progress:50});
@@ -64,7 +89,9 @@ assert(chart.strokes.some(s=>s.color==='#b5f36b'&&!s.dash.length),'user is solid
 const steering=chart.strokes.filter(s=>s.color==='#b5f36b'&&s.points.length===data.length).at(-1).points;
 assert(steering[2].y<steering[0].y&&steering[3].y>steering[0].y,'positive left and negative right inputs are not absolute-valued');
 assert.equal(chart.strokes.filter(s=>s.color==='#ff907e').length,2,'one shared distance cursor in each row');
+const previousChart=drawing(640,230);R.comparison(previousChart.canvas,data,data,{playerLabel:'이번 시도',referenceLabel:'직전 시도'});
+assert(previousChart.texts.some(t=>t.text==='이번 시도')&&previousChart.texts.some(t=>t.text==='직전 시도')&&!previousChart.texts.some(t=>t.text==='시범'),'previous attempts are not mislabeled as a reference demonstration');
 const missing=drawing(640,230);R.comparison(missing.canvas,[{s:0,brake:0,steer:0},{s:20,brake:.4,steer:.4},null,{s:60,brake:NaN,steer:NaN},{s:80,brake:.1,steer:.1}],[],{fromS:0,toS:100});
 assert(missing.strokes.filter(s=>s.color==='#b5f36b').every(s=>s.points.length<=2),'missing data is a gap rather than a fabricated bridge');
 R.comparison(drawing().canvas,[],[]);R.track(drawing(1,1).canvas,stateAt(scene),scene);R.comparison(drawing(1,1).canvas,data,data);
-console.log('PASS renderer: start-up orientation, preserved turn handedness, high-contrast distance boards, board culling, shared replay camera, signed distance-aligned comparison and missing-data gaps.');
+console.log('PASS renderer: fixed scale across 0–350 km/h and replay, 250 m circuit lookahead, minimaps, physical reference line and arrows, start-up orientation, boards, signed comparisons and missing-data gaps.');
