@@ -1,0 +1,322 @@
+using System;
+using System.Drawing;
+using System.Drawing.Drawing2D;
+using System.IO;
+using System.Runtime.InteropServices;
+using System.Speech.Synthesis;
+using System.Threading;
+using System.Windows.Forms;
+
+namespace IntsLiveCoach
+{
+    internal static class Program
+    {
+        [STAThread]
+        private static void Main()
+        {
+            Application.EnableVisualStyles();
+            Application.SetCompatibleTextRenderingDefault(false);
+            Application.Run(new CoachWindow());
+        }
+    }
+
+    internal sealed class CoachWindow : Form
+    {
+        private ITelemetryReader reader = new LmuReader();
+        private readonly CoachEngine engine = new CoachEngine();
+        private readonly PrincipleCoach principles = new PrincipleCoach();
+        private readonly OverlayWindow overlay = new OverlayWindow();
+        private readonly Label connection = new Label(), stage = new Label(), feedback = new Label(), action = new Label();
+        private readonly RichTextBox detail = new RichTextBox { ReadOnly = true, BorderStyle = BorderStyle.None, DetectUrls = false, BackColor = Palette.Background, ScrollBars = RichTextBoxScrollBars.Vertical };
+        private readonly Label session = new Label();
+        private readonly Label setup = new Label();
+        private readonly ComboBox game = new ComboBox(), discipline = new ComboBox();
+        private readonly TabControl tabs = new TabControl();
+        private readonly ListBox lessons = new ListBox();
+        private readonly RichTextBox lessonText = new RichTextBox();
+        private readonly LinkLabel lessonSource = new LinkLabel();
+        private readonly string[] gameNames = { "LMU", "ACC", "AMS2", "AC", "EA WRC" };
+        private DrivingDiscipline selectedDiscipline = DrivingDiscipline.Race;
+        private CoachPrincipleView lastPrinciple;
+        private int generation;
+        private bool haveFrames;
+        private string selectedGame = "LMU";
+        private readonly CheckBox voice = new CheckBox(), passThrough = new CheckBox();
+        private readonly Button show = new Button(), export = new Button();
+        private readonly SpeechSynthesizer speech = new SpeechSynthesizer();
+        private readonly object engineLock = new object();
+        private System.Threading.Timer poll;
+        private DateTime lastFreshUtc = DateTime.MinValue, lastSpokenUtc = DateTime.MinValue, feedbackUntil = DateTime.MinValue;
+        private double lastTime = double.NaN;
+        private int polling;
+        private bool disconnected = true, closing, hotkey;
+        private string lastSpokenId = "";
+        private const int HotkeyId = 0x494E;
+
+        public CoachWindow()
+        {
+            Text = "INTS Live Coach · 실전 주행 & 원리";
+            ClientSize = new Size(780, 770); MinimumSize = new Size(720, 700);
+            StartPosition = FormStartPosition.CenterScreen; BackColor = Palette.Background;
+            ForeColor = Palette.Text; Font = new Font("Malgun Gothic", 10);
+            var selectors = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 52, Padding = new Padding(20, 10, 0, 0), BackColor = Palette.Panel };
+            selectors.Controls.Add(new Label { Text = "게임", AutoSize = true, Margin = new Padding(0, 5, 8, 0) });
+            game.DropDownStyle = ComboBoxStyle.DropDownList; game.Width = 160; game.Items.AddRange(gameNames); game.SelectedIndex = 0; selectors.Controls.Add(game);
+            selectors.Controls.Add(new Label { Text = "연습", AutoSize = true, Margin = new Padding(20, 5, 8, 0) });
+            discipline.DropDownStyle = ComboBoxStyle.DropDownList; discipline.Width = 190; discipline.Items.AddRange(new object[] { "레이싱 · 제동과 회전", "랠리 · 하중과 방향 전환", "드리프트 · 슬라이드 균형" }); discipline.SelectedIndex = 0; selectors.Controls.Add(discipline);
+            tabs.Dock = DockStyle.Fill;
+            var practice = new TabPage("실전 코치") { BackColor = Palette.Background, AutoScroll = true };
+            var guide = new TabPage("원리 배우기 · 게임 없이 보기") { BackColor = Palette.Background, Padding = new Padding(16) };
+            tabs.TabPages.Add(practice); tabs.TabPages.Add(guide); Controls.Add(tabs); Controls.Add(selectors);
+            var grid = new TableLayoutPanel { Dock = DockStyle.Top, Height = 650, Padding = new Padding(25, 16, 25, 0), ColumnCount = 1, RowCount = 10 };
+            foreach (float height in new float[] { 43, 37, 82, 45, 54, 70, 95, 55, 46, 50 }) grid.RowStyles.Add(new RowStyle(SizeType.Absolute, height));
+            practice.Controls.Add(grid);
+            var title = new Label { Text = "INTS'  LIVE COACH", Dock = DockStyle.Fill, Font = new Font("Segoe UI", 23, FontStyle.Bold), ForeColor = Palette.Lime };
+            grid.Controls.Add(title, 0, 0);
+            connection.Text = "LMU 연결을 확인하는 중…"; connection.Dock = DockStyle.Fill; connection.ForeColor = Palette.Cyan; grid.Controls.Add(connection, 0, 1);
+            setup.Dock = DockStyle.Fill; setup.ForeColor = Palette.Muted; grid.Controls.Add(setup, 0, 2); UpdateSetup();
+            stage.Dock = DockStyle.Fill; stage.Font = new Font(Font, FontStyle.Bold); stage.Text = "LMU 대기 → 기준 랩 기록 → 다음 랩 비교"; grid.Controls.Add(stage, 0, 3);
+            session.Dock = DockStyle.Fill; session.ForeColor = Palette.Muted; session.Text = "실제 LMU 데이터가 들어오면 차량·트랙·랩이 표시됩니다."; grid.Controls.Add(session, 0, 4);
+            feedback.Dock = DockStyle.Fill; feedback.Font = new Font("Malgun Gothic", 17, FontStyle.Bold); feedback.Text = "실제 주행에서 입력 하나를 바꿔 보세요."; grid.Controls.Add(feedback, 0, 5);
+            detail.Dock = DockStyle.Fill; detail.ForeColor = Palette.Muted; detail.Text = "내 직전 유효 랩과 같은 코스 위치에서 비교합니다.\n내 이전 랩은 이상적인 주행이나 최속 기준이 아닙니다."; grid.Controls.Add(detail, 0, 6);
+            action.Dock = DockStyle.Fill; action.ForeColor = Palette.Lime; grid.Controls.Add(action, 0, 7);
+            var buttons = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = false };
+            StyleButton(show, "오버레이 보기", 155); show.Click += delegate { if (overlay.Visible) overlay.Hide(); else overlay.Show(); show.Text = overlay.Visible ? "오버레이 숨기기" : "오버레이 보기"; }; buttons.Controls.Add(show);
+            StyleButton(export, "이번 주행 내보내기", 170); export.Enabled = false; export.Click += Export; buttons.Controls.Add(export);
+            passThrough.Text = "마우스 통과"; passThrough.AutoSize = true; passThrough.Margin = new Padding(12, 8, 0, 0); passThrough.CheckedChanged += delegate { overlay.SetPassThrough(passThrough.Checked); }; buttons.Controls.Add(passThrough); grid.Controls.Add(buttons, 0, 8);
+            var footer = new FlowLayoutPanel { Dock = DockStyle.Fill };
+            voice.Text = "짧은 한국어 음성 코칭"; voice.AutoSize = true; voice.Enabled = false;
+            try { foreach (InstalledVoice v in speech.GetInstalledVoices()) if (v.Enabled && v.VoiceInfo.Culture.TwoLetterISOLanguageName == "ko") { speech.SelectVoice(v.VoiceInfo.Name); voice.Enabled = true; break; } } catch { }
+            if (!voice.Enabled) voice.Text = "한국어 음성 미설치 · 텍스트 코칭 사용";
+            voice.CheckedChanged += delegate { if (!voice.Checked) speech.SpeakAsyncCancelAll(); }; footer.Controls.Add(voice);
+            footer.Controls.Add(new Label { AutoSize = true, ForeColor = Palette.Muted, Text = "Ctrl+Alt+O: 마우스 통과 전환 · 별도 서버 전송 없음" }); grid.Controls.Add(footer, 0, 9);
+            overlay.FormClosing += delegate(object sender, FormClosingEventArgs e) { if (!closing) { e.Cancel = true; overlay.Hide(); show.Text = "오버레이 보기"; } };
+            lessons.Dock = DockStyle.Left; lessons.Width = 210; lessons.BackColor = Palette.Panel; lessons.ForeColor = Palette.Text; lessons.BorderStyle = BorderStyle.None; lessons.DisplayMember = "Title";
+            lessonText.Dock = DockStyle.Fill; lessonText.ReadOnly = true; lessonText.BorderStyle = BorderStyle.None; lessonText.BackColor = Palette.Background; lessonText.ForeColor = Palette.Text; lessonText.Font = new Font("Malgun Gothic", 11); lessonText.DetectUrls = false;
+            lessonSource.Dock = DockStyle.Bottom; lessonSource.Height = 48; lessonSource.LinkColor = Palette.Cyan;
+            guide.Controls.Add(lessonText); guide.Controls.Add(lessons); guide.Controls.Add(lessonSource);
+            lessons.SelectedIndexChanged += delegate { ShowLesson(); }; lessonSource.LinkClicked += delegate { var item = lessons.SelectedItem as PrincipleLesson; if (item != null && item.SourceUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase)) System.Diagnostics.Process.Start(item.SourceUrl); };
+            game.SelectedIndexChanged += delegate { ChangeSource(); };
+            discipline.SelectedIndexChanged += delegate { lock (engineLock) { selectedDiscipline = (DrivingDiscipline)discipline.SelectedIndex; engine.Reset(); principles.Reset(); haveFrames = false; generation++; lastPrinciple = null; } feedbackUntil = DateTime.MinValue; speech.SpeakAsyncCancelAll(); LoadLessons(); UpdateSetup(); };
+            LoadLessons();
+            Shown += delegate { hotkey = Native.RegisterHotKey(Handle, HotkeyId, 0x4003, (uint)Keys.O); if (!hotkey) passThrough.Text = "마우스 통과 (이 창에서 해제)"; poll = new System.Threading.Timer(Poll, null, 0, 50); };
+        }
+
+        private void ChangeSource()
+        {
+            lock (engineLock)
+            {
+                generation++; reader.Dispose();
+                switch (game.SelectedIndex)
+                {
+                    case 1: reader = new AssettoReader(AssettoGame.Acc); break;
+                    case 2: reader = new Ams2Reader(); break;
+                    case 3: reader = new AssettoReader(AssettoGame.Ac); break;
+                    case 4: reader = new WrcReader(); break;
+                    default: reader = new LmuReader(); break;
+                }
+                selectedGame = gameNames[game.SelectedIndex]; lastTime = double.NaN; lastFreshUtc = DateTime.MinValue; disconnected = true;
+                engine.Reset(); principles.Reset(); haveFrames = false; lastPrinciple = null;
+            }
+            export.Enabled = false; feedbackUntil = DateTime.MinValue; speech.SpeakAsyncCancelAll();
+            if (game.SelectedIndex == 4) discipline.SelectedIndex = 1;
+            UpdateSetup(); Apply(null, null, null, "선택한 게임에서 주행을 시작하세요.");
+        }
+        private void UpdateSetup()
+        {
+            string instruction;
+            switch (game.SelectedIndex)
+            {
+                case 1: instruction = "ACC: 차량에 탑승하면 연결 · 다른 AC 계열 게임은 함께 실행하지 마세요.\n코스 길이 정보가 없으면 거리별 이전 랩 비교는 제공하지 않습니다."; break;
+                case 2: instruction = "AMS2: Options → System → Shared Memory: Project CARS 2\n레이싱: 출발선을 통과한 뒤 완전한 유효 랩을 마치면 다음 랩과 비교합니다."; break;
+                case 3: instruction = "AC: 차량에 탑승하면 연결 · 드리프트 연습을 위에서 선택하세요.\n랩 유효성이 확인되지 않으면 이전 랩을 기준 기록으로 채택하지 않습니다."; break;
+                case 4: instruction = "EA WRC: wrc / session_update UDP를 127.0.0.1:20777로 설정\n동봉 README의 설정 절차 참고 · 스테이지·차량 자동 식별/랩 비교는 미지원"; break;
+                default: instruction = "LMU: Gameplay → Enable Plugins 켜고 게임 재시작\n출발선을 통과한 뒤 완전한 유효 랩을 마치면 다음 랩과 비교합니다."; break;
+            }
+            setup.Text = instruction + "\n오버레이는 테두리 없는 창 / 창 모드에서 사용하세요.";
+        }
+        private void LoadLessons()
+        {
+            lessons.Items.Clear(); foreach (var item in PrincipleCoach.GetLessons(selectedDiscipline)) lessons.Items.Add(item);
+            if (lessons.Items.Count > 0) lessons.SelectedIndex = 0;
+        }
+        private void ShowLesson()
+        {
+            var item = lessons.SelectedItem as PrincipleLesson; if (item == null) return;
+            lessonText.Text = item.Title + "\n\n목표\n" + item.Goal + "\n\n원리\n" + item.Explanation + "\n\n게임에서 해 볼 연습\n" + item.Drill + "\n\n확인할 변화\n" + item.LookFor + "\n\n판단의 한계\n" + item.Limitations;
+            lessonSource.Text = "참고: " + item.SourceTitle + " (브라우저로 열기)";
+        }
+
+        private static void StyleButton(Button button, string text, int width)
+        {
+            button.Text = text; button.Size = new Size(width, 34); button.FlatStyle = FlatStyle.Flat;
+            button.BackColor = Palette.Panel; button.ForeColor = Palette.Text; button.FlatAppearance.BorderColor = Color.FromArgb(65, 88, 100);
+        }
+
+        private void Poll(object unused)
+        {
+            if (closing || Interlocked.Exchange(ref polling, 1) != 0) return;
+            try
+            {
+                lock (engineLock)
+                {
+                TelemetryFrame frame; string status;
+                bool read = reader.TryRead(out frame, out status);
+                CoachView view = null; CoachPrincipleView principleView = null;
+                bool fresh = read && frame != null && (!double.IsNaN(frame.Time)) && (frame.Time != lastTime);
+                if (fresh)
+                {
+                    lastFreshUtc = DateTime.UtcNow; lastTime = frame.Time; disconnected = false;
+                    bool canCompare = selectedDiscipline == DrivingDiscipline.Race && !frame.TimeIsCaptureClock && frame.ValidLapKnown && !double.IsNaN(frame.TrackLength) && !double.IsNaN(frame.LapDistance);
+                    if (canCompare) view = engine.Update(frame);
+                    else
+                    {
+                        engine.Disconnect("이 모드에서는 유효한 거리 랩 비교를 수집하지 않습니다.");
+                        view = new CoachView { Status = "실시간 입력 · 원리 코칭", Headline = "측정할 수 있는 입력과 반응을 관찰합니다.", Detail = selectedDiscipline == DrivingDiscipline.Race ? "이 연결은 거리·랩 유효성 정보가 부족해 이전 랩의 거리 비교를 제공하지 않습니다." : "원리 배우기의 과제 하나를 고르고 입력 하나씩 바꿔 보세요.", NextAction = "진단 근거가 부족하면 실패 원인을 단정하지 않습니다." };
+                    }
+                    principleView = principles.Update(frame, selectedDiscipline); haveFrames = true;
+                }
+                else if (!reader.LastReadTransient || (DateTime.UtcNow - lastFreshUtc).TotalSeconds >= 1.5)
+                {
+                    if (!disconnected) { view = engine.Disconnect("주행 데이터가 멈췄습니다. 연결되면 기준 랩부터 다시 확인합니다."); principles.Disconnect("주행 데이터 대기"); disconnected = true; }
+                    frame = null;
+                }
+                else return; // A short writer lock/duplicate is not a disconnection.
+                TelemetryFrame captured = frame; CoachView capturedView = view; CoachPrincipleView capturedPrinciple = principleView; string capturedStatus = status; int capturedGeneration = generation;
+                if (!closing && IsHandleCreated) BeginInvoke((Action)delegate { if (capturedGeneration == generation) Apply(captured, capturedView, capturedPrinciple, capturedStatus); });
+                }
+            }
+            catch (Exception ex)
+            {
+                if (!disconnected) { lock (engineLock) { engine.Disconnect("데이터 읽기 오류로 이번 랩 비교를 중단했습니다."); principles.Disconnect("데이터 읽기 오류"); } disconnected = true; }
+                if (!closing && IsHandleCreated) try { BeginInvoke((Action)delegate { Apply(null, null, null, "연결을 확인하세요: " + ex.GetType().Name); }); } catch (InvalidOperationException) { }
+            }
+            finally { Interlocked.Exchange(ref polling, 0); }
+        }
+
+        private void Apply(TelemetryFrame frame, CoachView view, CoachPrincipleView principleView, string status)
+        {
+            if (closing) return;
+            bool connected = frame != null && !disconnected;
+            connection.Text = connected ? "● " + selectedGame + " 데이터 수신 · 게임이 보고한 입력" : "○ " + (string.IsNullOrEmpty(status) ? "선택한 게임을 실행하고 차량에 탑승하세요." : status);
+            connection.ForeColor = connected ? Palette.Lime : Palette.Muted;
+            if (frame != null) session.Text = frame.Track + "  /  " + frame.Car + "\n" + (frame.Lap >= 0 ? "랩 " + frame.Lap + " · " : "") + Value(frame.SpeedKph, " km/h") + (frame.TimeIsCaptureClock ? " · 수집 시계 사용" : "");
+            if (!connected)
+            {
+                stage.Text = "주행 데이터 대기 · 코칭 일시 중단";
+                session.Text = "실시간 데이터 없음 · 게임·플러그인·차량 탑승 상태를 확인하세요.";
+                feedback.Text = "먼저 원리 하나와 연습 목표를 골라 보세요.";
+                detail.Text = "원리 배우기는 게임 없이도 볼 수 있습니다.\n주행 데이터가 들어오면 관측 → 가능한 원리 → 다음 연습으로 연결합니다.";
+                action.Text = "";
+                feedbackUntil = DateTime.MinValue;
+                lastPrinciple = null;
+                overlay.UpdateData(null, null, selectedGame + " 주행 데이터 대기", "원리 배우기 탭은 게임 없이도 볼 수 있습니다.", "게임·연결 설정·차량 탑승 상태를 확인하세요."); speech.SpeakAsyncCancelAll(); return;
+            }
+            if (view != null)
+            {
+                if (frame.InPit || frame.IsReplay || !frame.OnTrack || (selectedDiscipline == DrivingDiscipline.Race && frame.ValidLapKnown && !frame.IsValidLap)) { lastPrinciple = null; feedbackUntil = DateTime.MinValue; }
+                stage.Text = view.Status; feedback.Text = view.Headline; string detailText = view.Detail; action.Text = view.NextAction;
+                if (principleView != null && !string.IsNullOrEmpty(principleView.Limits)) detailText += "\n확인 범위: " + principleView.Limits;
+                export.Enabled = haveFrames;
+                if (principleView != null && principleView.NewFeedback) { lastPrinciple = principleView; feedbackUntil = DateTime.UtcNow.AddSeconds(10); }
+                else if (view.NewFeedback && DateTime.UtcNow >= feedbackUntil) { lastPrinciple = null; feedbackUntil = DateTime.UtcNow.AddSeconds(8); }
+                bool showFeedback = DateTime.UtcNow < feedbackUntil;
+                string spokenId = view.FeedbackId, spoken = view.NextAction; bool newSpeech = view.NewFeedback;
+                if (lastPrinciple != null)
+                {
+                    feedback.Text = "최근 관찰 · " + lastPrinciple.Title;
+                    detailText = "관측: " + lastPrinciple.Observation + "\n가능한 원리: " + lastPrinciple.PossibleMechanism + "\n확인 범위: " + lastPrinciple.Limits;
+                    action.Text = "다음 연습: " + lastPrinciple.NextDrill;
+                }
+                if (showFeedback && lastPrinciple != null)
+                {
+                    overlay.UpdateData(frame, view, lastPrinciple.Title, lastPrinciple.Observation, lastPrinciple.NextDrill);
+                    spokenId = lastPrinciple.EventId; spoken = lastPrinciple.NextDrill; newSpeech = principleView != null && principleView.NewFeedback;
+                }
+                else overlay.UpdateData(frame, view, showFeedback ? view.Headline : view.Status, showFeedback ? view.ResultSummary : (view.HasReference ? "흰 표시: 내 직전 유효 랩의 페달 입력 · 거리 비교는 근사" : "원리 배우기에서 과제를 선택하세요. 판단 근거가 쌓이면 알려드립니다."), showFeedback ? view.NextAction : (principleView == null ? view.NextAction : principleView.Status));
+                if (detail.Text != detailText) detail.Text = detailText;
+                if (voice.Checked && newSpeech && spokenId != lastSpokenId && (DateTime.UtcNow - lastSpokenUtc).TotalSeconds > 15 && frame.Brake < .08 && Math.Abs(frame.Steering) < .15 && Math.Abs(frame.LateralG) < .35 && frame.SpeedKph > 30)
+                { lastSpokenId = spokenId; lastSpokenUtc = DateTime.UtcNow; speech.SpeakAsyncCancelAll(); speech.SpeakAsync(spoken); }
+                if (frame.Brake > .1 || Math.Abs(frame.Steering) > .2 || double.IsNaN(frame.LateralG) || Math.Abs(frame.LateralG) > .5 || frame.InPit || frame.IsReplay) speech.SpeakAsyncCancelAll();
+            }
+        }
+
+        internal static string Value(double number, string unit) { return double.IsNaN(number) || double.IsInfinity(number) ? "—" : Math.Round(number).ToString() + unit; }
+        private void Export(object sender, EventArgs args)
+        {
+            using (var dialog = new SaveFileDialog { Filter = "주행 코칭 기록 (*.json)|*.json", FileName = "INTS-" + selectedGame + "-" + DateTime.Now.ToString("yyyyMMdd-HHmmss") + ".json" })
+                if (dialog.ShowDialog(this) == DialogResult.OK) try { string json; lock (engineLock) json = "{\"game\":\"" + selectedGame + "\",\"lapComparison\":" + engine.ExportJson() + ",\"principleCoaching\":" + principles.ExportJson() + "}"; File.WriteAllText(dialog.FileName, json, new System.Text.UTF8Encoding(false)); } catch (Exception ex) { MessageBox.Show(this, "기록 저장 실패: " + ex.Message); }
+        }
+        protected override void WndProc(ref Message m) { if (m.Msg == 0x0312 && m.WParam.ToInt32() == HotkeyId) passThrough.Checked = !passThrough.Checked; base.WndProc(ref m); }
+        protected override void OnFormClosed(FormClosedEventArgs e)
+        {
+            closing = true; if (poll != null) poll.Dispose(); if (hotkey) Native.UnregisterHotKey(Handle, HotkeyId);
+            // Do not dispose the map while a reader callback is copying it.
+            for (int i = 0; i < 30 && Interlocked.CompareExchange(ref polling, 0, 0) != 0; i++) Thread.Sleep(10);
+            if (Interlocked.CompareExchange(ref polling, 0, 0) == 0) reader.Dispose();
+            speech.SpeakAsyncCancelAll(); speech.Dispose(); overlay.Dispose(); base.OnFormClosed(e);
+        }
+    }
+
+    internal static class Palette
+    {
+        public static readonly Color Background = Color.FromArgb(13, 22, 29), Panel = Color.FromArgb(23, 39, 48), Text = Color.FromArgb(229, 239, 242), Muted = Color.FromArgb(154, 177, 190), Lime = Color.FromArgb(183, 241, 112), Cyan = Color.FromArgb(110, 214, 235), Brake = Color.FromArgb(255, 143, 124);
+    }
+
+    internal sealed class OverlayWindow : Form
+    {
+        private TelemetryFrame frame; private CoachView view; private string headline = "주행 데이터 대기", result = "", detail = "조작이 안정된 뒤 짧게 피드백합니다."; private bool passThrough;
+        public OverlayWindow()
+        {
+            Text = "INTS Coaching Overlay";
+            FormBorderStyle = FormBorderStyle.None; TopMost = true; ShowInTaskbar = false; DoubleBuffered = true;
+            Size = new Size(500, 270); BackColor = Palette.Background; ForeColor = Palette.Text; Opacity = .94;
+            StartPosition = FormStartPosition.Manual; Location = new Point(Screen.PrimaryScreen.WorkingArea.Left + 16, Screen.PrimaryScreen.WorkingArea.Top + 90); Font = new Font("Malgun Gothic", 9);
+            MouseDown += delegate(object sender, MouseEventArgs e) { if (!passThrough && e.Button == MouseButtons.Left) { Native.ReleaseCapture(); Native.SendMessage(Handle, 0xA1, new IntPtr(2), IntPtr.Zero); } };
+        }
+        protected override bool ShowWithoutActivation { get { return true; } }
+        protected override CreateParams CreateParams { get { var cp = base.CreateParams; cp.ExStyle |= 0x08000000; return cp; } }
+        public void SetPassThrough(bool enabled) { passThrough = enabled; if (IsHandleCreated) { long style = Native.GetExStyle(Handle); Native.SetExStyle(Handle, enabled ? style | 0x20L : style & ~0x20L); } Invalidate(); }
+        protected override void OnHandleCreated(EventArgs e) { base.OnHandleCreated(e); SetPassThrough(passThrough); }
+        public void UpdateData(TelemetryFrame current, CoachView coach, string heading, string observed, string explanation) { frame = current; view = coach; headline = heading ?? ""; result = observed ?? ""; detail = explanation ?? ""; Invalidate(); }
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            var g = e.Graphics; g.SmoothingMode = SmoothingMode.AntiAlias;
+            using (var border = new Pen(Palette.Cyan, 2)) g.DrawRectangle(border, 1, 1, Width - 3, Height - 3);
+            Draw(g, "INTS  /  LIVE COACH", new Rectangle(14, 9, 245, 20), Palette.Cyan, 9, true);
+            Draw(g, passThrough ? "마우스 통과 · Ctrl+Alt+O" : "드래그 이동 · Ctrl+Alt+O 잠금", new Rectangle(250, 9, 238, 20), Palette.Muted, 8, false);
+            Draw(g, frame == null ? "— km/h" : CoachWindow.Value(frame.SpeedKph, " km/h") + "   " + (frame.Gear == 0 ? "N" : frame.Gear.ToString()) + "단", new Rectangle(14, 35, 190, 30), Palette.Text, 18, true);
+            string reference = view != null && view.HasReference ? "내 기준 랩 " + view.ReferenceLap : "입력 · 원리 코칭";
+            Draw(g, reference, new Rectangle(272, 40, 215, 22), Palette.Muted, 10, false);
+            Bar(g, "제동", frame == null ? double.NaN : frame.Brake, view == null || view.ReferenceAtPosition == null ? double.NaN : view.ReferenceAtPosition.Brake, 14, Palette.Brake);
+            Bar(g, "가속", frame == null ? double.NaN : frame.Throttle, view == null || view.ReferenceAtPosition == null ? double.NaN : view.ReferenceAtPosition.Throttle, 178, Palette.Lime);
+            double steer = frame == null ? double.NaN : frame.Steering;
+            Draw(g, "조향  " + (double.IsNaN(steer) ? "—" : (steer > 0 ? "+" : "") + Math.Round(steer * 100) + "%"), new Rectangle(344, 74, 145, 26), Palette.Cyan, 10, true);
+            Draw(g, headline, new Rectangle(14, 117, 473, 42), Palette.Text, 12, true);
+            Draw(g, result, new Rectangle(14, 163, 473, 42), Palette.Muted, 9, false);
+            Draw(g, detail, new Rectangle(14, 212, 473, 47), Palette.Lime, 10, false);
+        }
+        private static void Draw(Graphics g, string text, Rectangle bounds, Color color, float size, bool bold) { using (var font = new Font("Malgun Gothic", size, bold ? FontStyle.Bold : FontStyle.Regular)) TextRenderer.DrawText(g, text, font, bounds, color, TextFormatFlags.WordBreak | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix); }
+        private static void Bar(Graphics g, string label, double value, double reference, int x, Color color)
+        {
+            Draw(g, label + " " + (double.IsNaN(value) ? "—" : Math.Round(value * 100) + "%"), new Rectangle(x, 73, 150, 21), color, 10, true);
+            using (var brush = new SolidBrush(Palette.Panel)) g.FillRectangle(brush, x, 99, 142, 7);
+            if (!double.IsNaN(value)) using (var brush = new SolidBrush(color)) g.FillRectangle(brush, x, 99, (float)(142 * Math.Max(0, Math.Min(1, value))), 7);
+            if (!double.IsNaN(reference)) using (var pen = new Pen(Palette.Text, 2)) { float marker = (float)(x + 142 * Math.Max(0, Math.Min(1, reference))); g.DrawLine(pen, marker, 95, marker, 110); }
+        }
+    }
+
+    internal static class Native
+    {
+        [DllImport("user32.dll")] internal static extern bool RegisterHotKey(IntPtr window, int id, uint modifiers, uint key);
+        [DllImport("user32.dll")] internal static extern bool UnregisterHotKey(IntPtr window, int id);
+        [DllImport("user32.dll")] internal static extern bool ReleaseCapture();
+        [DllImport("user32.dll")] internal static extern IntPtr SendMessage(IntPtr window, int message, IntPtr wParam, IntPtr lParam);
+        [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")] private static extern IntPtr GetWindowLongPtr(IntPtr window, int index);
+        [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW")] private static extern IntPtr SetWindowLongPtr(IntPtr window, int index, IntPtr value);
+        [DllImport("user32.dll", EntryPoint = "GetWindowLongW")] private static extern int GetWindowLong(IntPtr window, int index);
+        [DllImport("user32.dll", EntryPoint = "SetWindowLongW")] private static extern int SetWindowLong(IntPtr window, int index, int value);
+        internal static long GetExStyle(IntPtr h) { return IntPtr.Size == 8 ? GetWindowLongPtr(h, -20).ToInt64() : GetWindowLong(h, -20); }
+        internal static void SetExStyle(IntPtr h, long style) { if (IntPtr.Size == 8) SetWindowLongPtr(h, -20, new IntPtr(style)); else SetWindowLong(h, -20, (int)style); }
+    }
+}

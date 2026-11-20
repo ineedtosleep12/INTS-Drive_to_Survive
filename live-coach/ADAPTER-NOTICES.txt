@@ -1,0 +1,65 @@
+AMS2 and EA SPORTS WRC adapter compatibility notes
+================================================
+These are independently written compatible readers. No game SDK header, game
+source, generated channel catalog, or proprietary binary is redistributed.
+No affiliation with or endorsement by the game developers is claimed.
+Checked on the user's installed games on 2026-11-21.
+
+AMS2 primary source
+-------------------
+Installed official Support/SharedMemory/AMS2_SharedMemoryExampleApp/
+SharedMemory.h and App.cpp. The example documents the Project CARS 2 setting,
+the $pcars2$ name, read-only access and even/stable sequence snapshots.
+The v14 SDK layout is 20700 bytes with 64 participant entries of 100 bytes;
+sequence at 7320. Native scalar alignment is 4 bytes; bool size 1.
+SharedMemory.h SHA256:
+2ABAF09901883F80C6393AC065577FB6229FA0DB6784DABCDC502EEDA1A3674E
+
+Public hardware-vendor setup documentation:
+https://www.asetek.com/simsports/wp-content/uploads/2024/05/Input-Guide-Automobilista-2.pdf
+Set Options > System > Shared Memory to Project CARS 2. UDP is not required.
+
+AMS2 publishes the viewed participant, not a separate authoritative human
+driver identifier. Menus, replay, pause, formation and non-racing states are
+excluded, but the user must drive their own car rather than spectate/use AI.
+Current-lap time plus recorded completed-lap time supplies a continuous clock;
+no wall-clock time is presented as measured game lap timing. Before the timed
+lap clock starts, a marked monotonic receive clock keeps inputs visible and
+is explicitly excluded from lap comparison. Restarts/jumps reset the clock.
+Local-axis signs and clutch engagement direction are not documented
+in the installed header, so directional dynamics and clutch remain unknown.
+Steering retains its native signed normalized value; left/right labels require
+separate validation. No steering-wheel lock/degrees are invented.
+
+EA SPORTS WRC primary sources
+-----------------------------
+Installed generated Documents/My Games/WRC/telemetry/readme/channels.json,
+readme/udp/wrc.json, readme/readme.txt, and the read-only config inspection.
+Official online setup/format guide:
+https://forums.ea.com/t5/s/tghpe58374/attachments/tghpe58374/wrc-general-discussion-en/2667/1/EA%20SPORTS%20WRC%20-%20UDP%20Telemetry%20Guide%20%28v1.3%29.pdf
+
+channels.json schema 1 / data 2 SHA256:
+1738C8E6F1E4FDA698A7BA6A077CA31915D9EC179C0ED20EAF80A3E92FACE86C
+udp/wrc.json schema 1 / data 3 SHA256:
+624193B1B4257F02E5285C6568849A67391D2C449074F864E1815FCD01128F2E
+
+The current standard packet is 237 packed little-endian bytes. packet_uid is
+a uint64 rolling counter; game_frame_count is another uint64. The older text
+guide's fourCC description is inconsistent with this current channel schema;
+the installed machine-readable schema is authoritative for this decoder.
+Stage distance/length are float64; inputs/speed/time are float32; bool occupies
+one byte in this standard packet. Steering is negative left/positive right.
+Controls are after assists and overrides. Clutch is a pedal: 0 off / 1 full.
+Vehicle direction vectors describe world-space left/forward/up; projecting
+world velocity/acceleration onto them yields vehicle-local signals.
+
+The standard packet has no route/car ID, replay flag, human-control flag or
+valid-stage result. These are not inferred. It must not qualify as a circuit
+reference lap. UDP receive socket binds 127.0.0.1 only; remote datagrams are not
+accepted. No packet is transmitted and no game configuration is modified.
+The user's existing SimHub endpoints remain untouched.
+
+Runtime adapters fail closed if their installed schemas do not match these
+reviewed versions. Fixtures exercise synthetic decoding, rejection paths,
+clock continuity and configuration checks. They do not certify a running
+game connection or human-driving/replay discrimination unavailable in source.

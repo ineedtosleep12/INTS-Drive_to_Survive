@@ -1,0 +1,98 @@
+AssettoReader source and compatibility notes
+==========================================
+Assetto Corsa (AC) and Assetto Corsa Competizione (ACC) are third-party
+products. This project is not affiliated with or endorsed by Kunos.
+No proprietary game files, game SDK headers or downloaded libraries are
+redistributed. No game installation files are changed by this reader.
+
+Implementation reference, consulted 2026-11-21:
+Retrieved reference fingerprints (SHA-256):
+AccStructs.cpp: 83C06A9C7B8A735357F41D90BCA4F24BD453D265ED57D6AAB639D8F4A0D850F3
+ac_sim_info.py: E05662CCE4B39B4E830195C3899519B567FFAFED02533A0ACE2CD45CEC56E117
+
+1. CSP author's public AC shared-memory mapping, Windows pack4 / UTF-16 wchar:
+https://github.com/ac-custom-shaders-patch/acc-extension-apps/blob/master/apps/python/AccExtHelper/sim_info.py
+The file credits Rombik and explicitly permits unrestricted reuse. Only ABI
+field facts were used; no Python runtime or application code is bundled.
+2. ACC v1.8.12 specification-compatible C++ mapping by Vladyslav Kolodii:
+https://github.com/SolusDev-sys/CppAccSharedMemory
+https://github.com/SolusDev-sys/CppAccSharedMemory/blob/main/ACCSharedMemoryDocumentationV1.8.12.pdf
+This adapter reads only the stable physics prefix through localVelocity and
+graphics through isValidLap. It does not rely on the reference's unused tail.
+3. AC live-verified steering and gyro semantics in the author's bridge:
+https://github.com/dlinov/acrc-bridge#assetto-corsa-telemetry-channels
+4. AC logger author's observed local velocity / angular velocity conventions:
+https://github.com/Zhaoyi-Fan/assetto-corsa-race-logger/blob/main/docs/log_format_spec.md
+5. ACC native length is documented unused; authoritative TrackMeters is a
+separate broadcast-protocol field, not interchangeable with shared memory:
+https://github.com/angel-git/acc-broadcasting/blob/master/BroadcastingNetworkProtocol.cs
+6. Author's setup guide confirms built-in shared memory needs no switch:
+https://horizonlabshud.com/games/assetto-corsa/
+
+MIT notice for ACC structure mapping reference
+---------------------------------------------
+MIT License
+
+Copyright (c) 2026 Vladyslav Kolodii
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+Runtime compatibility and limits
+--------------------------------
+- Built-in named maps: acpmf_physics, acpmf_graphics, acpmf_static. They are
+  opened existing, read-only; never created by this application.
+- AC and ACC reuse names. Check actual running game processes and reject
+  concurrent/ambiguous AC-family games. Content Manager launcher alone is
+  not an active AC driving process.
+- Accept documented shared-memory families AC 1.7 and ACC 1.8, including
+  patch suffixes. Do not confuse smVersion with game acVersion: a new game
+  patch is not arbitrarily blocked if its shared-memory family is unchanged.
+- Copy twice and compare whole prefixes. There is no documented shared
+  seqlock or atomic cross-page timestamp, so perfect snapshot synchronization
+  is not claimed. DistanceAgeSeconds remains unknown, not a fabricated zero.
+- AC provides native track spline length. On playground/mod maps it may be
+  absent; live controls still work without making up a metre scale.
+- ACC marks native trackSplineLength unused. Default ACC TrackLength and
+  LapDistance stay NaN. An optional verified-length provider is an explicit
+  integration hook; this adapter has no guessed circuit-length table and
+  does not configure or connect ACC Broadcasting.
+- AC base shared memory has no authoritative current-lap-validity flag.
+  ValidLapKnown remains false. ACC uses its explicit graphics isValidLap.
+- Gear conversion: native 0 reverse, 1 neutral, 2 first -> -1,0,1.
+- Steering is a signed normalized value. Do not label it road-wheel degrees.
+- AC local velocity X is sideways, Z forwards; expose sideways magnitude
+  only because the positive right-hand sign is not established here. Y yaw
+  rate is native radians/sec. No directional countersteer verdict is claimed.
+- ACC accG is documented global, and fuel is documented kg. Those are not
+  silently mislabeled as local G or litres; corresponding fields stay NaN.
+- Base pages have no handbrake input. Clutch polarity documentation differs
+  across sources/builds; without live calibration the adapter leaves clutch
+  pedal travel unknown instead of teaching an inverted input.
+- Time joins game lap timers using completed-lap duration. If timing is not
+  active (such as an untimed playground), advancing live packets can use a
+  Stopwatch capture clock, explicitly flagged TimeIsCaptureClock. Circuit
+  timing comparisons must reject that fallback. Paused/replay/AI frames are
+  excluded before timing. A capture clock is not a simulated physics clock.
+
+Setup: choose AC or ACC in the coach, run only that game, enter a driving
+session, and use windowed/borderless mode for the desktop overlay. No app
+must be enabled inside AC, no plugin copied, no UDP settings changed.
+
+Validation status: synthetic byte and clock fixtures only. No running AC or
+ACC driving session was used to certify this integration during development.

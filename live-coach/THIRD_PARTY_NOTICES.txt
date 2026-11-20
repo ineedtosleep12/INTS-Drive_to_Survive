@@ -1,0 +1,66 @@
+LMU shared-memory layout reference
+==================================
+The field offsets used by LmuReader.cs were derived from the MIT-licensed
+TinyPedal/pyLMUSharedMemory mapping, retrieved 2026-11-21:
+https://github.com/TinyPedal/pyLMUSharedMemory
+https://github.com/TinyPedal/pyLMUSharedMemory/blob/master/lmu_data.py
+Retrieved lmu_data.py SHA-256:
+1681F745955F8D1DABEE28394DBD5495AA49BC983281C8284A9EFDC28E712C7E
+
+MIT License
+
+Copyright (c) 2021 Tony Whitley
+Copyright (c) 2025 Xiang
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+Studio 397 compatibility verification (not bundled source)
+========================================================
+The installed LMU SDK headers were inspected for interoperability, including
+the Hold/Data update gate and separate shared lock protocol. No Studio 397
+header or game source is redistributed. LMU is a third-party product and this
+project is not affiliated with or endorsed by Studio 397 / Motorsport Games.
+
+Verified local installation: Steam build 25661166, checked 2026-11-21.
+Support/SharedMemoryInterface SHA-256 values:
+InternalsPlugin.hpp:
+9B6EE8CF610FA5049B18DF580A9A9BC9EBB91346FC466584D576A6442ABCF68F
+PluginObjects.hpp:
+F65F1D2226AF1ACB277F8337FB10D8955DB384118FC36EEF95EA446BE058E247
+SharedMemoryInterface.hpp:
+A82833D5E9E277A7C3AF8802518E35EA62F4EC7C7C7C9083650282E4EDF1F8BF
+
+Runtime validation requires these installed headers. There is no documented
+ABI schema/version in LMU_Data; generic.gameVersion is not used as one. An
+unknown SDK is rejected until its format and synchronization are reviewed.
+Windows x64, little-endian, internal telemetry/scoring structs packed to 4,
+one-byte native bool. Parsed payload: 324820 bytes (excluding potential C++
+tail padding). Readable mapping capacity alone does not prove ABI compatibility.
+
+Data access: LMU_Data is opened read-only. The separate existing 8-byte named
+synchronization mapping is modified only to acquire/release the SDK lock;
+the lock event is signalled only on release when waiters exist. No vehicle
+inputs, process memory, server APIs, or account credentials are accessed.
+
+Synthetic fixture tests verify byte offsets and rejection paths only.
+They do not constitute verification against a running LMU session.
+
+The SDK describes clutch range 0..1 but does not specify which endpoint is
+pedal pressed. The normalized Clutch channel remains NaN until endpoint
+polarity is verified; a raw range alone must not trigger clutch-kick advice.
