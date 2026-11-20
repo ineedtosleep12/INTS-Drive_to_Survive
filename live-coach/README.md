@@ -1,4 +1,4 @@
-# INTS Live Coach 0.1
+# INTS Live Coach 0.1.1
 
 Windows x64에서 실제 심레이싱 게임의 텔레메트리를 받아 작은 오버레이와 한국어 원리 코칭을 보여 주는 첫 연결 프로토타입입니다. `INTS-Live-Coach.exe`를 실행하면 됩니다. 별도 계정·서버·API 키·패키지 설치는 없습니다. Windows의 .NET Framework 4.x를 사용합니다.
 
@@ -23,6 +23,7 @@ Windows x64에서 실제 심레이싱 게임의 텔레메트리를 받아 작은
 | ACC | 내장 공유 메모리 | 입력·원리. 기본 공유 메모리에 유효한 코스 길이가 없어 거리별 이전 랩 비교는 비활성 |
 | AC | 내장 공유 메모리 | 입력·슬라이드 크기 관찰·드리프트 원리. 권위 있는 현재 랩 유효성 신호가 없어 기준 랩 비교는 비활성 |
 | EA WRC | localhost UDP 표준 `wrc/session_update` 패킷 | 랠리 입력·원리. 차량/스테이지 식별과 유효 랩 비교는 미지원 |
+| Assetto Corsa Rally (ACR) | 별도 ACR 프로세스 확인 + 공통 공유 메모리 앞부분 | 랠리 입력·원리 시험 연결. 완주 유효성·이전 스테이지 비교는 미지원 |
 
 차량·게임의 타이어 물리를 복제하는 프로그램은 아닙니다. 실제 게임이 보고한 입력과 반응을 관찰합니다. 데이터가 없는 채널은 미측정으로 남기며 가상의 값으로 채우지 않습니다. 게임마다 조향 부호 규칙이 달라 오버레이는 좌우 화살표 대신 게임의 정규화된 입력 수치를 표시합니다.
 
@@ -44,6 +45,15 @@ Windows x64에서 실제 심레이싱 게임의 텔레메트리를 받아 작은
 - `Options → System → Shared Memory`를 **Project CARS 2**로 설정합니다.
 - 직접 운전하는 세션에서 사용합니다. 관전/AI 운전 여부를 모든 상황에서 판별할 수는 없습니다.
 - 방향 부호가 검증되지 않은 차량 로컬 속도·가속도 채널은 사용하지 않습니다. 따라서 입력 변화에 대한 설명은 가능하지만 모든 슬라이드 원인을 판단하지는 않습니다.
+
+### Assetto Corsa Rally / AC Rally / ACR
+
+- 게임 선택에서 **AC Rally**를 고르면 랠리 모드로 전환됩니다. 기존 **AC** 항목은 원래 Assetto Corsa의 드리프트·토우게용 연결입니다.
+- ACR에서 스테이지에 진입해 직접 운전합니다. 다른 AC·ACC·EVO는 종료해야 공유 메모리 충돌을 피할 수 있습니다. 추가 DLL이나 UDP 설정은 사용하지 않습니다.
+- 속도·가속·제동·조향을 관찰하고, **원리 배우기 → 랠리**의 그래벌·하중 이동·펜듈럼·핸드브레이크·클러치 과제로 연결합니다.
+- 설치된 게임에 공개 SDK가 없어 [ACR 텔레메트리 제작자의 구현](https://github.com/Zillionnn/AC_Rally_Telemery)과 [다른 실제 ACR 기록 도구](https://github.com/decnet100/acr_telemetry)의 공통 형식만 참고한 시험 연결입니다. 공식 SDK 호환성이나 현재 설치 빌드의 실제 주행 검증을 완료한 것은 아닙니다.
+- 해석이 확인되지 않은 차체 회전축·클러치·핸드브레이크 값은 미측정으로 둡니다. 펜듈럼이나 핸드브레이크 사용의 성공·실패를 자동 판정하지 않습니다. 원리 가이드는 이용할 수 있습니다.
+- 서킷 랩 유효성이나 이전 스테이지 대비 시간차를 만들지 않습니다. 기록에 표시된 시계 종류와 확인 범위는 JSON 내보내기에도 포함됩니다. 연결 세부 근거는 `ACR-NOTICES.txt`를 참고하세요.
 
 ### EA WRC
 
@@ -83,7 +93,7 @@ Windows PowerShell에서:
 .\live-coach\build.ps1 -Test
 ```
 
-출력은 `build/live-coach/INTS-Live-Coach.exe`, 합성 데이터 검사기는 `INTS-Coach-Checks.exe`입니다. SDK·NuGet 설치가 필요하지 않습니다. `INTS-Coach-Checks.exe --probe`는 LMU에서 실제 프레임이 수신되는지만 확인하며 게임을 실행하거나 설정을 바꾸지 않습니다.
+출력은 `build/live-coach/INTS-Live-Coach.exe`, 합성 데이터 검사기는 `INTS-Coach-Checks.exe`입니다. SDK·NuGet 설치가 필요하지 않습니다. `INTS-Coach-Checks.exe --probe`는 LMU에서 실제 프레임이 수신되는지만 확인하며 게임을 실행하거나 설정을 바꾸지 않습니다. ACR 연결만 확인하려면 `INTS-Coach-Checks.exe --probe acr`을 실행합니다.
 
 SDK 구조·출처·라이선스·패킷 버전은 함께 제공한 `*NOTICES.txt`를 참고하세요. 게임의 독점 헤더·DLL·자산은 배포하지 않습니다.
 

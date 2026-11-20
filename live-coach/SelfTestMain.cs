@@ -15,7 +15,7 @@ namespace IntsLiveCoach
                 {
                     string game = args.Length > 1 ? args[1].ToLowerInvariant() : "lmu";
                     ITelemetryReader source;
-                    switch(game) { case "acc": source=new AssettoReader(AssettoGame.Acc);break;case "ac":source=new AssettoReader(AssettoGame.Ac);break;case "ams2":source=new Ams2Reader();break;case "wrc":source=new WrcReader();break;case "lmu":source=new LmuReader();break;default:throw new ArgumentException("Game: lmu / acc / ams2 / ac / wrc"); }
+                    switch(game) { case "acc": source=new AssettoReader(AssettoGame.Acc);break;case "ac":source=new AssettoReader(AssettoGame.Ac);break;case "acr":source=new AcrReader();break;case "ams2":source=new Ams2Reader();break;case "wrc":source=new WrcReader();break;case "lmu":source=new LmuReader();break;default:throw new ArgumentException("Game: lmu / acc / ams2 / ac / acr / wrc"); }
                     using (var reader = source)
                     {
                         string status = ""; TelemetryFrame frame;

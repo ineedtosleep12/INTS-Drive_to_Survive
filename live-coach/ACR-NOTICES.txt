@@ -1,0 +1,78 @@
+Assetto Corsa Rally experimental reader
+======================================
+AC Rally is selected separately from original Assetto Corsa and ACC.
+Installed game inspected: Steam app 3917090, build 26756580, 2026-11-21.
+Process suffix: acr/Binaries/Win64/acr.exe. No exposed official telemetry
+SDK/version table was found in that installation. The game was not launched.
+
+Interoperability sources (authors' own running-game telemetry tools)
+-----------------------------------------------------------------
+Zillionnn/AC_Rally_Telemery, commit
+820c6c8a50e7ff82786691e25a06d35214179aff:
+https://github.com/Zillionnn/AC_Rally_Telemery/blob/820c6c8a50e7ff82786691e25a06d35214179aff/acr_telemetry.py
+https://github.com/Zillionnn/AC_Rally_Telemery/blob/820c6c8a50e7ff82786691e25a06d35214179aff/acr_data.py
+The recorder reads the named acpmf pages, packs scalar fields at4 bytes,
+retains the native gear, and multiplies steer_angle by100 for its steering
+plot. Its layout through physics is_ai_controlled and graphics normalized
+position is used only as a compatible interface description.
+
+Cross-check: decnet100/acr_telemetry, commit
+eaef0f29c6712a2e0dbc3bfd8246b84dcdbb9586, bundled ACC parser used by its ACR
+recorder. Common field ordering matches; later graphics layout differs.
+https://github.com/decnet100/acr_telemetry/tree/eaef0f29c6712a2e0dbc3bfd8246b84dcdbb9586/vendor/acc_shared_memory_rs/src/parsers
+No source, binaries, stage maps or pacenote assets from these applications
+are bundled. This reader is independently implemented in C#.
+
+Compatibility and limitations
+-----------------------------
+- Open-existing, read-only maps acpmf_physics/graphics/static; never creates
+  a game mapping or writes game controls. No plugin/DLL install required.
+- Reads only physics420 / graphics252 / static200 bytes. It avoids player
+  personal-name fields and conflicting AC/ACC graphics tails.
+- Checks the running acr.exe path and refuses simultaneous AC/ACC/EVO.
+- Two complete copies must match. Packet counters are update indices, not
+  a documented seqlock. Cross-page atomic synchronization is not promised.
+- New physical packets and recent graphics updates are required; initial
+  stale pages, paused/replay/menu/AI states do not become coaching frames.
+- Runtime validates UTF16 labels, finite scalars, ranges and state enums.
+  Actual SM/game versions are recorded. No authoritative ACR ABI version
+  whitelist is claimed: this remains an experimental common-prefix reader.
+- Steering must fit the normalized range. Values that appear to be degrees
+  are rejected rather than rescaled using an invented steering lock.
+- Gear is preserved natively (-1 reverse,0 neutral,1 first). It is not
+  shifted using original AC's index convention. Requires live confirmation.
+- Handbrake, clutch polarity, yaw/local-velocity axes, local accelerations,
+  fuel units and a valid-stage result are not sufficiently established here.
+  They remain unknown. Pendulum/slide/handbrake/clutch runtime recognition
+  is withheld; brake/steering input observations and rally lessons are usable.
+- Uses an explicitly labelled capture clock for input durations. No stage
+  time, valid lap reference, metre delta or stage success is invented.
+  Stage timer rollback or car/stage/session change ends the observation epoch.
+
+Synthetic fixtures test decoding, invalid/missing data, unknown channels and
+restart isolation. They do not constitute live ACR driving verification.
+No affiliation with or endorsement by Supernova / Kunos / 505 is claimed.
+
+MIT notice for the interface reference
+-------------------------------------
+MIT License
+
+Copyright (c) 2026 Zillionnn
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

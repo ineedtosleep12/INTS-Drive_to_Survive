@@ -35,7 +35,7 @@ namespace IntsLiveCoach
         private readonly ListBox lessons = new ListBox();
         private readonly RichTextBox lessonText = new RichTextBox();
         private readonly LinkLabel lessonSource = new LinkLabel();
-        private readonly string[] gameNames = { "LMU", "ACC", "AMS2", "AC", "EA WRC" };
+        private readonly string[] gameNames = { "LMU", "ACC", "AMS2", "AC", "EA WRC", "AC Rally" };
         private DrivingDiscipline selectedDiscipline = DrivingDiscipline.Race;
         private CoachPrincipleView lastPrinciple;
         private int generation;
@@ -113,13 +113,14 @@ namespace IntsLiveCoach
                     case 2: reader = new Ams2Reader(); break;
                     case 3: reader = new AssettoReader(AssettoGame.Ac); break;
                     case 4: reader = new WrcReader(); break;
+                    case 5: reader = new AcrReader(); break;
                     default: reader = new LmuReader(); break;
                 }
                 selectedGame = gameNames[game.SelectedIndex]; lastTime = double.NaN; lastFreshUtc = DateTime.MinValue; disconnected = true;
                 engine.Reset(); principles.Reset(); haveFrames = false; lastPrinciple = null;
             }
             export.Enabled = false; feedbackUntil = DateTime.MinValue; speech.SpeakAsyncCancelAll();
-            if (game.SelectedIndex == 4) discipline.SelectedIndex = 1;
+            if (game.SelectedIndex == 4 || game.SelectedIndex == 5) discipline.SelectedIndex = 1;
             UpdateSetup(); Apply(null, null, null, "선택한 게임에서 주행을 시작하세요.");
         }
         private void UpdateSetup()
@@ -131,6 +132,7 @@ namespace IntsLiveCoach
                 case 2: instruction = "AMS2: Options → System → Shared Memory: Project CARS 2\n레이싱: 출발선을 통과한 뒤 완전한 유효 랩을 마치면 다음 랩과 비교합니다."; break;
                 case 3: instruction = "AC: 차량에 탑승하면 연결 · 드리프트 연습을 위에서 선택하세요.\n랩 유효성이 확인되지 않으면 이전 랩을 기준 기록으로 채택하지 않습니다."; break;
                 case 4: instruction = "EA WRC: wrc / session_update UDP를 127.0.0.1:20777로 설정\n동봉 README의 설정 절차 참고 · 스테이지·차량 자동 식별/랩 비교는 미지원"; break;
+                case 5: instruction = "Assetto Corsa Rally: 다른 AC 계열 게임을 종료하고 스테이지에서 직접 운전\n랠리 입력·원리 코칭 시험 연결 · 공식 SDK/실제 주행 검증 전"; break;
                 default: instruction = "LMU: Gameplay → Enable Plugins 켜고 게임 재시작\n출발선을 통과한 뒤 완전한 유효 랩을 마치면 다음 랩과 비교합니다."; break;
             }
             setup.Text = instruction + "\n오버레이는 테두리 없는 창 / 창 모드에서 사용하세요.";
