@@ -1,0 +1,28 @@
+{
+  "game":"LMU",
+  "car":"Porsche 911 GT3 R (992)",
+  "layout":"unknown",
+  "gameVersion":"unknown",
+  "lapNumber":39,
+  "expectedLapTime":103.91308,
+  "distanceBasis":"lmu-motec-lap-distance-m",
+  "sourceUrl":"https://www.youtube.com/watch?v=UYHhD2EDuKY",
+  "author":"PS_Racing",
+  "licence":"Author supplies a free personal setup/MoTeC download. Public redistribution permission not established; keep original and derived traces private.",
+  "provenance":"Creator video explicitly identifies LMU Porsche 992 at Portimao. Original Drive folder 1XrSirS6J8Eq0ngcGd5HuLSFmUz0YaAzk, observed ZIP 992_LMGT3_PORTIMAO.zip file ID 116880QjsxNLXE7EbeuKzbxyJ5TGN0FHM. ZIP SHA256 6a3d9ba910dad7049cb25a15130f6c6c6fc0aab62e038162fd941c32f7e34028. LDX fastest 1:43.913/displayed lap 2; actual Lap Number 39 selected by 103.91308-second Lap Start Elapsed Time difference and Last Laptime. Native-scoring channel mapping and game version unverified.",
+  "conditions":{
+    "sourceCarLabel":"Manthey DK Engineering 2026 #91:WEC",
+    "sourceCarClass":"GT3",
+    "sourceDownloadUrl":"https://drive.google.com/drive/folders/1XrSirS6J8Eq0ngcGd5HuLSFmUz0YaAzk",
+    "sourceLapTimeClaim":"1:43.913",
+    "authorAmbientCelsius":"21",
+    "authorTrackCelsius":"39",
+    "authorTrackGrip":"Saturated Grip",
+    "bop":"unknown",
+    "tyreCompound":"unknown",
+    "setup":"Archive includes Qv2 and Rv2 SVM files; which produced this recorded lap unverified",
+    "weather":"unknown",
+    "distanceMapping":"MoTeC Lap Distance and Path Lateral in metres, 5Hz. Native channel alignment remains exploratory.",
+    "trackLimitsValidity":"No independent invalid-lap signal decoded. Author presents a hotlap; timing agreement does not certify track-limit validity."
+  }
+}

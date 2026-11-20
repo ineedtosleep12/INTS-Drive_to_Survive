@@ -94,9 +94,19 @@ export function convert(recording, options) {
   const closest=time=>wraps.reduce((a,b)=>Math.abs(b/distance.hz-time)<Math.abs(a/distance.hz-time)?b:a,wraps[0]);
   const from=closest(begin.time), to=closest(end.time);
   assert(from!==undefined&&to>from&&Math.abs(from/distance.hz-begin.time)<0.5&&Math.abs(to/distance.hz-end.time)<0.5,'Scoring/telemetry lap epochs disagree');
-  const origin=from/distance.hz, samples=[], lateral=recording.channels.get('Path Lateral');
+  // Some LMU logs reset scoring distance a fraction before crossing the line.
+  // Omit only a bounded leading pre-start span; never clamp it to an invented
+  // zero-distance sample or silently remove negative/backwards interior data.
+  let first=from;
+  while(first<to&&distance.values[first]<0) {
+    assert(distance.values[first]>=-5&&(first+1-from)/distance.hz<=0.40000001,'Leading pre-start distance exceeds 5 m / 0.4 s omission bound');
+    assert(first===from||distance.values[first]>=distance.values[first-1],'Distance moves backwards before lap start');
+    first++;
+  }
+  assert(first<to,'No nonnegative lap samples after the pre-start span');
+  const omittedPreStartSamples=first-from,origin=first/distance.hz, samples=[], lateral=recording.channels.get('Path Lateral');
   if(lateral)assert(lateral.unit==='m','Path Lateral unit must be m');
-  for(let i=from;i<to;i++) {
+  for(let i=first;i<to;i++) {
     const time=i/distance.hz;
     const sample={time:round(time-origin),distanceM:round(distance.values[i]),speedKph:round(at(speed,time)),brake:round(at(brake,time)/100),throttle:round(at(throttle,time)/100),steering:round(at(steering,time)/100),x:null,z:null};
     if(lateral?.values)sample.pathLateralM=round(at(lateral,time));
@@ -105,10 +115,15 @@ export function convert(recording, options) {
     samples.push(sample);
   }
   const conditions={...(options.conditions??{}),recordedLapTimeSeconds:String(round(scoredLapTime)),recordedLapNumber:String(options.lapNumber),recordedVehicle:recording.header.carLongName??recording.header.car,sourceDistanceHz:String(distance.hz),sourceInputsHz:String(brake.hz),sampleTimeOrigin:'First recorded scoring-distance sample after lap wrap, not exact start/finish crossing',boundaryCoverage:'Partial: no synthetic start/finish samples. Whole-lap delta must be withheld.',coordinateLimit:'GPS available but mapping to LMU world axes unverified; world line coordinates omitted.',validityEvidence:'No independent game invalid-lap/track-limit flag decoded. Timing-channel agreement does not prove validity.',bestLapEvidence:Math.abs(scoredBest-scoredLapTime)<0.002?'Game Best Laptime and Last Laptime match Lap Start Elapsed Time difference':'Last Laptime matches Lap Start Elapsed Time difference'};
+  if(omittedPreStartSamples) {
+    conditions.omittedPreStartSamples=String(omittedPreStartSamples);
+    conditions.sampleTimeOrigin='First retained nonnegative scoring-distance sample; bounded leading pre-start samples omitted, never clamped to zero';
+  }
   for(const [name,key] of [['Ambient Temperature','measuredAmbientCelsius'],['Track Temperature','measuredTrackCelsius'],['Fuel Level','measuredFuelLitres']]) {
     const c=recording.channels.get(name); if(c?.values) { const values=Array.from(c.values).filter((_,i)=>i/c.hz>=origin&&i/c.hz<to/distance.hz); conditions[key]=`${round(Math.min(...values))}..${round(Math.max(...values))}`; }
   }
-  const result={schemaVersion:1,game:'LMU',car:options.car,track:recording.header.track,layout:options.layout??'unknown',gameVersion:options.gameVersion??'unknown',trackLengthM:null,distanceBasis:options.distanceBasis,coordinateFrame:'unknown',lateralPositionBasis:lateral?.values?'lmu-motec-path-lateral-m':'unknown',sourceUrl:options.sourceUrl,author:options.author,recordedAt:`${recording.header.date} ${recording.header.time} (local timezone unknown)`,licence:options.licence??'Personal download only; redistribution permission unverified',provenance:`Original LD SHA256 ${recording.sha256}. ${options.provenance??''} Stored Lap Distance channel used directly; no speed integration or GPS-to-world inference. ${samples.length} samples at ${distance.hz} Hz; ${samples[0].distanceM}..${samples.at(-1).distanceM} m.`,validity:'unknown',complete:false,conditions,samples};
+  const omission=omittedPreStartSamples?` Omitted ${omittedPreStartSamples} leading negative-distance pre-start sample(s), each within 5 m and total span within 0.4 s. No zero-distance point synthesized.`:'';
+  const result={schemaVersion:1,game:'LMU',car:options.car,track:recording.header.track,layout:options.layout??'unknown',gameVersion:options.gameVersion??'unknown',trackLengthM:null,distanceBasis:options.distanceBasis,coordinateFrame:'unknown',lateralPositionBasis:lateral?.values?'lmu-motec-path-lateral-m':'unknown',sourceUrl:options.sourceUrl,author:options.author,recordedAt:`${recording.header.date} ${recording.header.time} (local timezone unknown)`,licence:options.licence??'Personal download only; redistribution permission unverified',provenance:`Original LD SHA256 ${recording.sha256}. ${options.provenance??''} Stored Lap Distance channel used directly; no speed integration or GPS-to-world inference. ${samples.length} samples at ${distance.hz} Hz; ${samples[0].distanceM}..${samples.at(-1).distanceM} m.${omission}`,validity:'unknown',complete:false,conditions,samples};
   return result;
 }
 

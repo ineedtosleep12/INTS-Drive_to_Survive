@@ -1,0 +1,29 @@
+{
+  "game": "LMU",
+  "car": "Porsche 911 GT3 R (992)",
+  "layout": "unknown",
+  "gameVersion": "unknown",
+  "lapNumber": 27,
+  "expectedLapTime": 137.67284,
+  "distanceBasis": "lmu-motec-lap-distance-m",
+  "sourceUrl": "https://www.youtube.com/watch?v=F2b4f4jgDj4",
+  "author": "PS_Racing",
+  "licence": "Author offers a free personal download. Public redistribution of original or derived traces has not been authorized.",
+  "provenance": "Creator-linked folder https://drive.google.com/drive/folders/1wYD6D3BoSclboqpnVrgK0XZvd-vP4_lH . Archive 992_LMGT3_SPA.zip SHA256 699193d44a6033973d46a79005c695e146834542ef1e1def330d980d5aca9108. Original LD recorded 15/05/2026. LDX displays fastest lap 3 at 2:17.673; actual Lap Number 27 is selected by matching Last Laptime, Best Laptime and Lap Start Elapsed Time difference 137.67284 seconds. Track-limit validity and native channel mapping remain unverified. No actual samples are included in this configuration example.",
+  "conditions": {
+    "sourceDownloadUrl": "https://drive.google.com/drive/folders/1wYD6D3BoSclboqpnVrgK0XZvd-vP4_lH",
+    "sourceCarLabel": "Manthey Ema 2024 #91:LM",
+    "sourceCarClass": "GT3",
+    "sourceLapTimeClaim": "2:17.673",
+    "authorAmbientCelsius": "21",
+    "authorTrackCelsius": "28",
+    "authorTrackGrip": "Saturated Grip",
+    "trackLimitsValidity": "Author presents a hotlap; independent invalid-lap channel not decoded",
+    "distanceMapping": "Recorded MoTeC Lap Distance; native scoring correspondence remains unverified",
+    "pathLateralMapping": "Recorded MoTeC Path Lateral; native lateral correspondence remains unverified",
+    "timingResolution": "Distance 5 Hz and controls 10 Hz; output at 5 Hz. No invented finish-line timestamps.",
+    "setup": "Author archive contains Q and R SVM files; which produced the lap is unverified",
+    "bop": "unknown",
+    "tyreCompound": "unknown"
+  }
+}

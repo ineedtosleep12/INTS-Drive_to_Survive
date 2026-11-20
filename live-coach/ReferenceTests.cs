@@ -33,6 +33,9 @@ namespace IntsLiveCoach
             var missing=Fixture();missing.Samples[0].X=missing.Samples[0].Z=double.NaN;
             string json=missing.ToJson();Check(!json.Contains("NaN")&&json.Contains("\"x\":null"),"missing channels are JSON null");
             Check(double.IsNaN(ReferenceLap.LoadJson(json).Samples[0].X),"missing position never fabricated as zero");
+            var degrees=Fixture();degrees.Samples[0].Steering=double.NaN;degrees.Samples[0].SteeringDegrees=-32.5;
+            var preserved=ReferenceLap.LoadJson(degrees.ToJson());
+            Check(preserved.Samples[0].SteeringDegrees==-32.5&&double.IsNaN(preserved.Samples[0].Steering),"raw source degrees survive without invented normalized steering");
             var result=ReferenceComparison.Compare(reference,own);
             Check(result.Comparable&&result.HasLineComparison,"same source basis and coordinates compare");
             Near(result.LapDeltaSeconds,2,"full-lap elapsed delta from exact boundaries");

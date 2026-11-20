@@ -1,0 +1,22 @@
+{
+  "game": "ACC",
+  "car": "Porsche 911 GT3 R (992)",
+  "layout": "GP",
+  "gameVersion": "1.10.2 (author stated)",
+  "author": "PS_Racing",
+  "sourceUrl": "https://www.youtube.com/watch?v=demCGTihz3A",
+  "startBeaconIndex": 4,
+  "expectedLapTime": 113.750,
+  "outputFormat": "view-only-reference",
+  "licence": "Free personal download offered by creator; redistribution permission not established",
+  "provenance": "Creator-linked folder https://drive.google.com/drive/folders/1q19HfODVerchh_9m8SmKHxbFyQ4Zmde4 . Beacon 619.359 to 733.108 s matches advertised 1:53.750 within 0.001 s. The LDX fastest 1:53.680 is a different later lap and is not substituted. This is an ACC record, never an LMU source.",
+  "conditions": {
+    "authorBop": "2024",
+    "authorAmbientCelsius": "23",
+    "authorTrackCelsius": "27",
+    "authorTrackStatus": "Optimal",
+    "fuel": "unknown",
+    "tyres": "unknown",
+    "setup": "Creator folder contains setup files; exact lap setup not independently verified"
+  }
+}

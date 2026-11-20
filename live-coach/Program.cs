@@ -25,6 +25,7 @@ namespace IntsLiveCoach
         private ITelemetryReader reader = new LmuReader();
         private readonly CoachEngine engine = new CoachEngine();
         private readonly PrincipleCoach principles = new PrincipleCoach();
+        private readonly LiveReferenceCoach referenceCoach = new LiveReferenceCoach();
         private readonly OverlayWindow overlay = new OverlayWindow();
         private readonly Label connection = new Label(), stage = new Label(), feedback = new Label(), action = new Label();
         private readonly RichTextBox detail = new RichTextBox { ReadOnly = true, BorderStyle = BorderStyle.None, DetectUrls = false, BackColor = Palette.Background, ScrollBars = RichTextBoxScrollBars.Vertical };
@@ -34,6 +35,9 @@ namespace IntsLiveCoach
         private readonly TabControl tabs = new TabControl();
         private readonly ReferencePanel referencePanel = new ReferencePanel();
         private int lastCapturedLapCount;
+        private bool referenceCoachingEnabled;
+        private string referenceGame="";
+        private string liveContextKey="";
         private readonly ListBox lessons = new ListBox();
         private readonly RichTextBox lessonText = new RichTextBox();
         private readonly LinkLabel lessonSource = new LinkLabel();
@@ -101,7 +105,9 @@ namespace IntsLiveCoach
             guide.Controls.Add(lessonText); guide.Controls.Add(lessons); guide.Controls.Add(lessonSource);
             lessons.SelectedIndexChanged += delegate { ShowLesson(); }; lessonSource.LinkClicked += delegate { var item = lessons.SelectedItem as PrincipleLesson; if (item != null && item.SourceUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase)) System.Diagnostics.Process.Start(item.SourceUrl); };
             game.SelectedIndexChanged += delegate { ChangeSource(); };
-            discipline.SelectedIndexChanged += delegate { lock (engineLock) { selectedDiscipline = (DrivingDiscipline)discipline.SelectedIndex; engine.Reset(); principles.Reset(); haveFrames = false; lastCapturedLapCount=0; generation++; lastPrinciple = null; } feedbackUntil = DateTime.MinValue; speech.SpeakAsyncCancelAll(); LoadLessons(); UpdateSetup(); };
+            discipline.SelectedIndexChanged += delegate { lock (engineLock) { selectedDiscipline = (DrivingDiscipline)discipline.SelectedIndex; engine.Reset(); principles.Reset(); referenceCoach.Reset(); haveFrames = false; lastCapturedLapCount=0; generation++; lastPrinciple = null; } feedbackUntil = DateTime.MinValue; lastSpokenId="";lastSpokenUtc=DateTime.MinValue;speech.SpeakAsyncCancelAll(); ClearLiveOverlay(); LoadLessons(); UpdateSetup(); };
+            referencePanel.LiveSettingsChanged += ConfigureReference;
+            ConfigureReference(referencePanel.GetLiveSettings());
             LoadLessons();
             Shown += delegate { hotkey = Native.RegisterHotKey(Handle, HotkeyId, 0x4003, (uint)Keys.O); if (!hotkey) passThrough.Text = "마우스 통과 (이 창에서 해제)"; poll = new System.Threading.Timer(Poll, null, 0, 50); };
         }
@@ -121,9 +127,11 @@ namespace IntsLiveCoach
                     default: reader = new LmuReader(); break;
                 }
                 selectedGame = gameNames[game.SelectedIndex]; lastTime = double.NaN; lastFreshUtc = DateTime.MinValue; disconnected = true;
-                engine.Reset(); principles.Reset(); haveFrames = false; lastCapturedLapCount=0; lastPrinciple = null;
+                engine.Reset(); principles.Reset(); referenceCoach.Reset(); haveFrames = false; lastCapturedLapCount=0; lastPrinciple = null;
             }
             export.Enabled = false; feedbackUntil = DateTime.MinValue; speech.SpeakAsyncCancelAll();
+            lastSpokenId="";lastSpokenUtc=DateTime.MinValue;
+            liveContextKey="";referencePanel.SetLiveContext(selectedGame,null);
             if (game.SelectedIndex == 4 || game.SelectedIndex == 5) discipline.SelectedIndex = 1;
             UpdateSetup(); Apply(null, null, null, "선택한 게임에서 주행을 시작하세요.");
         }
@@ -140,12 +148,22 @@ namespace IntsLiveCoach
                 default: instruction = "LMU: Gameplay → Enable Plugins 켜고 게임 재시작\n출발선을 통과한 뒤 완전한 유효 랩을 마치면 다음 랩과 비교합니다."; break;
             }
             setup.Text = instruction + "\n오버레이는 테두리 없는 창 / 창 모드에서 사용하세요.";
+            if(referenceCoachingEnabled&&!string.Equals(selectedGame,referenceGame,StringComparison.OrdinalIgnoreCase))setup.Text+="\n불러온 "+referenceGame+" 기준은 이 게임에 적용하지 않습니다. 기본 원리 코칭을 사용합니다.";
         }
         private void LoadLessons()
         {
             lessons.Items.Clear(); foreach (var item in PrincipleCoach.GetLessons(selectedDiscipline)) lessons.Items.Add(item);
             if (lessons.Items.Count > 0) lessons.SelectedIndex = 0;
         }
+        private void ConfigureReference(ReferenceLiveSettings settings)
+        {
+            var selectedReference=settings.Reference;
+            lock(engineLock) {referenceCoach.Configure(settings);referenceCoachingEnabled=settings.Enabled&&selectedReference!=null;referenceGame=selectedReference==null?"":selectedReference.Game;generation++;}
+            // A changed source or alignment must never leave an old corner cue on screen.
+            speech.SpeakAsyncCancelAll();lastSpokenId="";lastSpokenUtc=DateTime.MinValue;ClearLiveOverlay();UpdateSetup();
+        }
+        private void ClearLiveOverlay()
+        {overlay.UpdateData(null,null,"기준·주행 조건 확인 중","다음 주행 데이터에서 코칭을 다시 시작합니다.","");}
         private void ShowLesson()
         {
             var item = lessons.SelectedItem as PrincipleLesson; if (item == null) return;
@@ -169,6 +187,7 @@ namespace IntsLiveCoach
                 TelemetryFrame frame; string status;
                 bool read = reader.TryRead(out frame, out status);
                 CoachView view = null; CoachPrincipleView principleView = null;
+                LiveReferenceView liveReferenceView=null;
                 ReferenceLap completedLap=null;
                 string completedLapError="";
                 bool fresh = read && frame != null && (!double.IsNaN(frame.Time)) && (frame.Time != lastTime);
@@ -191,29 +210,38 @@ namespace IntsLiveCoach
                         view = new CoachView { Status = "실시간 입력 · 원리 코칭", Headline = "측정할 수 있는 입력과 반응을 관찰합니다.", Detail = selectedDiscipline == DrivingDiscipline.Race ? "이 연결은 거리·랩 유효성 정보가 부족해 이전 랩의 거리 비교를 제공하지 않습니다." : "원리 배우기의 과제 하나를 고르고 입력 하나씩 바꿔 보세요.", NextAction = "진단 근거가 부족하면 실패 원인을 단정하지 않습니다." };
                     }
                     principleView = principles.Update(frame, selectedDiscipline); haveFrames = true;
+                    if(UseExternalReference)liveReferenceView=referenceCoach.Update(selectedGame,frame);
                 }
                 else if (!reader.LastReadTransient || (DateTime.UtcNow - lastFreshUtc).TotalSeconds >= 1.5)
                 {
-                    if (!disconnected) { view = engine.Disconnect("주행 데이터가 멈췄습니다. 연결되면 기준 랩부터 다시 확인합니다."); lastCapturedLapCount=0; principles.Disconnect("주행 데이터 대기"); disconnected = true; }
+                    if (!disconnected) { view = engine.Disconnect("주행 데이터가 멈췄습니다. 연결되면 기준 랩부터 다시 확인합니다."); lastCapturedLapCount=0; principles.Disconnect("주행 데이터 대기"); referenceCoach.Reset(); disconnected = true; }
                     frame = null;
                 }
                 else return; // A short writer lock/duplicate is not a disconnection.
                 TelemetryFrame captured = frame; CoachView capturedView = view; CoachPrincipleView capturedPrinciple = principleView; string capturedStatus = status; int capturedGeneration = generation;
-                if (!closing && IsHandleCreated) BeginInvoke((Action)delegate { if (capturedGeneration == generation) {if(completedLap!=null)referencePanel.SetOwnLap(completedLap);else if(completedLapError.Length>0)referencePanel.SetCaptureError(completedLapError);Apply(captured, capturedView, capturedPrinciple, capturedStatus);} });
+                if (!closing && IsHandleCreated) BeginInvoke((Action)delegate {
+                    if(capturedGeneration!=generation)return;
+                    if(completedLap!=null)referencePanel.SetOwnLap(completedLap);
+                    else if(completedLapError.Length>0)referencePanel.SetCaptureError(completedLapError);
+                    if(capturedGeneration==generation)Apply(captured,capturedView,capturedPrinciple,capturedStatus,liveReferenceView);
+                });
                 }
             }
             catch (Exception ex)
             {
-                if (!disconnected) { lock (engineLock) { engine.Disconnect("데이터 읽기 오류로 이번 랩 비교를 중단했습니다."); principles.Disconnect("데이터 읽기 오류"); } disconnected = true; }
-                if (!closing && IsHandleCreated) try { BeginInvoke((Action)delegate { Apply(null, null, null, "연결을 확인하세요: " + ex.GetType().Name); }); } catch (InvalidOperationException) { }
+                if (!disconnected) { lock (engineLock) { engine.Disconnect("데이터 읽기 오류로 이번 랩 비교를 중단했습니다."); principles.Disconnect("데이터 읽기 오류"); referenceCoach.Reset(); } disconnected = true; }
+                int errorGeneration=generation;
+                if (!closing && IsHandleCreated) try { BeginInvoke((Action)delegate { if(errorGeneration==generation)Apply(null, null, null, "연결을 확인하세요: " + ex.GetType().Name); }); } catch (InvalidOperationException) { }
             }
             finally { Interlocked.Exchange(ref polling, 0); }
         }
 
-        private void Apply(TelemetryFrame frame, CoachView view, CoachPrincipleView principleView, string status)
+        private void Apply(TelemetryFrame frame, CoachView view, CoachPrincipleView principleView, string status,LiveReferenceView liveReference=null)
         {
             if (closing) return;
             bool connected = frame != null && !disconnected;
+            string context=frame==null?"":selectedGame+"|"+frame.Car+"|"+frame.Track+"|"+frame.GameVersion;
+            if(context!=liveContextKey){liveContextKey=context;lastSpokenId="";lastSpokenUtc=DateTime.MinValue;speech.SpeakAsyncCancelAll();referencePanel.SetLiveContext(selectedGame,frame);}
             connection.Text = connected ? "● " + selectedGame + " 데이터 수신 · 게임이 보고한 입력" : "○ " + (string.IsNullOrEmpty(status) ? "선택한 게임을 실행하고 차량에 탑승하세요." : status);
             connection.ForeColor = connected ? Palette.Lime : Palette.Muted;
             if (frame != null) session.Text = frame.Track + "  /  " + frame.Car + "\n" + (frame.Lap >= 0 ? "랩 " + frame.Lap + " · " : "") + Value(frame.SpeedKph, " km/h") + (frame.TimeIsCaptureClock ? " · 수집 시계 사용" : "");
@@ -227,6 +255,10 @@ namespace IntsLiveCoach
                 feedbackUntil = DateTime.MinValue;
                 lastPrinciple = null;
                 overlay.UpdateData(null, null, selectedGame + " 주행 데이터 대기", "원리 배우기 탭은 게임 없이도 볼 수 있습니다.", "게임·연결 설정·차량 탑승 상태를 확인하세요."); speech.SpeakAsyncCancelAll(); return;
+            }
+            if(UseExternalReference && liveReference!=null)
+            {
+                ApplyReference(frame,liveReference);return;
             }
             if (view != null)
             {
@@ -257,11 +289,31 @@ namespace IntsLiveCoach
             }
         }
 
+        private void ApplyReference(TelemetryFrame frame,LiveReferenceView live)
+        {
+            export.Enabled=haveFrames;stage.Text=live.Status;
+            bool cue=live.Ready&&!string.IsNullOrEmpty(live.Heading);
+            feedback.Text=cue?live.Heading:live.Ready?"코너 탈출 후 짧게 알려드립니다.":"핫랩 기준 코칭 대기";
+            string observation=cue?live.Observation:live.Status;
+            string principle=cue?live.Principle:"한 구간의 진입부터 탈출까지 관측한 뒤 비교합니다.";
+            string next=cue?live.NextAction:live.Ready?"이번 랩은 평소처럼 달리세요.":"핫랩과 비교 탭에서 기준·이름 연결·탐색 정렬을 확인하세요.";
+            detail.Text=observation+"\n원리: "+principle+(string.IsNullOrEmpty(live.Estimate)?"":"\n확인 범위: "+live.Estimate);
+            action.Text=cue?"다음 랩: "+next:next;
+            overlay.UpdateData(frame,null,feedback.Text,observation,next,live);
+            bool settled=frame.Brake<.08&&Math.Abs(frame.Steering)<.15&&!double.IsNaN(frame.LateralG)&&Math.Abs(frame.LateralG)<.35&&frame.SpeedKph>30;
+            // Active IDs survive skipped UI callbacks; speak each delivered corner at most once.
+            string id="reference:"+live.FeedbackId;
+            if(voice.Checked&&cue&&settled&&id!=lastSpokenId&&(DateTime.UtcNow-lastSpokenUtc).TotalSeconds>15)
+            {lastSpokenId=id;lastSpokenUtc=DateTime.UtcNow;speech.SpeakAsyncCancelAll();speech.SpeakAsync(next);}
+            if(!cue||!settled||frame.InPit||frame.IsReplay||!frame.OnTrack||!frame.IsValidLap)speech.SpeakAsyncCancelAll();
+        }
+        private bool UseExternalReference {get {return selectedDiscipline==DrivingDiscipline.Race&&referenceCoachingEnabled&&string.Equals(selectedGame,referenceGame,StringComparison.OrdinalIgnoreCase);}}
+
         internal static string Value(double number, string unit) { return double.IsNaN(number) || double.IsInfinity(number) ? "—" : Math.Round(number).ToString() + unit; }
         private void Export(object sender, EventArgs args)
         {
             using (var dialog = new SaveFileDialog { Filter = "주행 코칭 기록 (*.json)|*.json", FileName = "INTS-" + selectedGame + "-" + DateTime.Now.ToString("yyyyMMdd-HHmmss") + ".json" })
-                if (dialog.ShowDialog(this) == DialogResult.OK) try { string json; lock (engineLock) json = "{\"game\":\"" + selectedGame + "\",\"lapComparison\":" + engine.ExportJson() + ",\"principleCoaching\":" + principles.ExportJson() + "}"; File.WriteAllText(dialog.FileName, json, new System.Text.UTF8Encoding(false)); } catch (Exception ex) { MessageBox.Show(this, "기록 저장 실패: " + ex.Message); }
+                if (dialog.ShowDialog(this) == DialogResult.OK) try { string json; lock (engineLock) json = "{\"game\":\"" + selectedGame + "\",\"lapComparison\":" + engine.ExportJson() + ",\"principleCoaching\":" + principles.ExportJson() + ",\"referenceCoaching\":"+referenceCoach.ExportJson()+"}"; File.WriteAllText(dialog.FileName, json, new System.Text.UTF8Encoding(false)); } catch (Exception ex) { MessageBox.Show(this, "기록 저장 실패: " + ex.Message); }
         }
         protected override void WndProc(ref Message m) { if (m.Msg == 0x0312 && m.WParam.ToInt32() == HotkeyId) passThrough.Checked = !passThrough.Checked; base.WndProc(ref m); }
         protected override void OnFormClosed(FormClosedEventArgs e)
@@ -281,12 +333,12 @@ namespace IntsLiveCoach
 
     internal sealed class OverlayWindow : Form
     {
-        private TelemetryFrame frame; private CoachView view; private string headline = "주행 데이터 대기", result = "", detail = "조작이 안정된 뒤 짧게 피드백합니다."; private bool passThrough;
+        private TelemetryFrame frame; private CoachView view; private LiveReferenceView external; private string headline = "주행 데이터 대기", result = "", detail = "조작이 안정된 뒤 짧게 피드백합니다."; private bool passThrough;
         public OverlayWindow()
         {
             Text = "INTS Coaching Overlay";
             FormBorderStyle = FormBorderStyle.None; TopMost = true; ShowInTaskbar = false; DoubleBuffered = true;
-            Size = new Size(500, 270); BackColor = Palette.Background; ForeColor = Palette.Text; Opacity = .94;
+            Size = new Size(500, 310); BackColor = Palette.Background; ForeColor = Palette.Text; Opacity = .94;
             StartPosition = FormStartPosition.Manual; Location = new Point(Screen.PrimaryScreen.WorkingArea.Left + 16, Screen.PrimaryScreen.WorkingArea.Top + 90); Font = new Font("Malgun Gothic", 9);
             MouseDown += delegate(object sender, MouseEventArgs e) { if (!passThrough && e.Button == MouseButtons.Left) { Native.ReleaseCapture(); Native.SendMessage(Handle, 0xA1, new IntPtr(2), IntPtr.Zero); } };
         }
@@ -294,7 +346,7 @@ namespace IntsLiveCoach
         protected override CreateParams CreateParams { get { var cp = base.CreateParams; cp.ExStyle |= 0x08000000; return cp; } }
         public void SetPassThrough(bool enabled) { passThrough = enabled; if (IsHandleCreated) { long style = Native.GetExStyle(Handle); Native.SetExStyle(Handle, enabled ? style | 0x20L : style & ~0x20L); } Invalidate(); }
         protected override void OnHandleCreated(EventArgs e) { base.OnHandleCreated(e); SetPassThrough(passThrough); }
-        public void UpdateData(TelemetryFrame current, CoachView coach, string heading, string observed, string explanation) { frame = current; view = coach; headline = heading ?? ""; result = observed ?? ""; detail = explanation ?? ""; Invalidate(); }
+        public void UpdateData(TelemetryFrame current, CoachView coach, string heading, string observed, string explanation,LiveReferenceView live=null) { frame = current; view = coach;external=live; headline = heading ?? ""; result = observed ?? ""; detail = explanation ?? ""; Invalidate(); }
         protected override void OnPaint(PaintEventArgs e)
         {
             var g = e.Graphics; g.SmoothingMode = SmoothingMode.AntiAlias;
@@ -302,23 +354,27 @@ namespace IntsLiveCoach
             Draw(g, "INTS  /  LIVE COACH", new Rectangle(14, 9, 245, 20), Palette.Cyan, 9, true);
             Draw(g, passThrough ? "마우스 통과 · Ctrl+Alt+O" : "드래그 이동 · Ctrl+Alt+O 잠금", new Rectangle(250, 9, 238, 20), Palette.Muted, 8, false);
             Draw(g, frame == null ? "— km/h" : CoachWindow.Value(frame.SpeedKph, " km/h") + "   " + (frame.Gear == 0 ? "N" : frame.Gear.ToString()) + "단", new Rectangle(14, 35, 190, 30), Palette.Text, 18, true);
-            string reference = view != null && view.HasReference ? "내 기준 랩 " + view.ReferenceLap : "입력 · 원리 코칭";
+            string reference = external!=null?(external.Ready?"핫랩 기준 · 근사 비교":"핫랩 기준 연결 대기"):view != null && view.HasReference ? "내 기준 랩 " + view.ReferenceLap : "입력 · 원리 코칭";
             Draw(g, reference, new Rectangle(272, 40, 215, 22), Palette.Muted, 10, false);
-            Bar(g, "제동", frame == null ? double.NaN : frame.Brake, view == null || view.ReferenceAtPosition == null ? double.NaN : view.ReferenceAtPosition.Brake, 14, Palette.Brake);
-            Bar(g, "가속", frame == null ? double.NaN : frame.Throttle, view == null || view.ReferenceAtPosition == null ? double.NaN : view.ReferenceAtPosition.Throttle, 178, Palette.Lime);
+            double refBrake=external!=null?(external.Ready&&external.ReferenceAtPosition!=null?external.ReferenceAtPosition.Brake:double.NaN):view == null || view.ReferenceAtPosition == null ? double.NaN : view.ReferenceAtPosition.Brake;
+            double refThrottle=external!=null?(external.Ready&&external.ReferenceAtPosition!=null?external.ReferenceAtPosition.Throttle:double.NaN):view == null || view.ReferenceAtPosition == null ? double.NaN : view.ReferenceAtPosition.Throttle;
+            Bar(g, "제동", frame == null ? double.NaN : frame.Brake, refBrake, 14, Palette.Brake,external!=null?Palette.Cyan:Palette.Text);
+            Bar(g, "가속", frame == null ? double.NaN : frame.Throttle, refThrottle, 178, Palette.Lime,external!=null?Palette.Cyan:Palette.Text);
             double steer = frame == null ? double.NaN : frame.Steering;
             Draw(g, "조향  " + (double.IsNaN(steer) ? "—" : (steer > 0 ? "+" : "") + Math.Round(steer * 100) + "%"), new Rectangle(344, 74, 145, 26), Palette.Cyan, 10, true);
-            Draw(g, headline, new Rectangle(14, 117, 473, 42), Palette.Text, 12, true);
-            Draw(g, result, new Rectangle(14, 163, 473, 42), Palette.Muted, 9, false);
-            Draw(g, detail, new Rectangle(14, 212, 473, 47), Palette.Lime, 10, false);
+            Draw(g, headline, new Rectangle(14, 117, 473, 34), Palette.Text, 12, true);
+            Draw(g, result, new Rectangle(14, 153, 473, 39), Palette.Muted, 9, false);
+            Draw(g, (external!=null&&!string.IsNullOrEmpty(external.Heading)?"다음 랩: ":"")+detail, new Rectangle(14, 196, 473, 40), Palette.Lime, 10, false);
+            Draw(g, external!=null&&!string.IsNullOrEmpty(external.Principle)?"원리: "+external.Principle:"",new Rectangle(14,240,473,40),Palette.Text,9,false);
+            Draw(g,external!=null?"청록 표시: 불러온 기준 · 정렬·주행 조건의 한계는 비교 탭 참고":"흰 표시: 내 이전 유효 랩 · 다음 코너에서는 조작에 집중하세요.",new Rectangle(14,287,473,18),Palette.Muted,8,false);
         }
         private static void Draw(Graphics g, string text, Rectangle bounds, Color color, float size, bool bold) { using (var font = new Font("Malgun Gothic", size, bold ? FontStyle.Bold : FontStyle.Regular)) TextRenderer.DrawText(g, text, font, bounds, color, TextFormatFlags.WordBreak | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix); }
-        private static void Bar(Graphics g, string label, double value, double reference, int x, Color color)
+        private static void Bar(Graphics g, string label, double value, double reference, int x, Color color,Color markerColor)
         {
             Draw(g, label + " " + (double.IsNaN(value) ? "—" : Math.Round(value * 100) + "%"), new Rectangle(x, 73, 150, 21), color, 10, true);
             using (var brush = new SolidBrush(Palette.Panel)) g.FillRectangle(brush, x, 99, 142, 7);
             if (!double.IsNaN(value)) using (var brush = new SolidBrush(color)) g.FillRectangle(brush, x, 99, (float)(142 * Math.Max(0, Math.Min(1, value))), 7);
-            if (!double.IsNaN(reference)) using (var pen = new Pen(Palette.Text, 2)) { float marker = (float)(x + 142 * Math.Max(0, Math.Min(1, reference))); g.DrawLine(pen, marker, 95, marker, 110); }
+            if (!double.IsNaN(reference)) using (var pen = new Pen(markerColor, 2)) { float marker = (float)(x + 142 * Math.Max(0, Math.Min(1, reference))); g.DrawLine(pen, marker, 95, marker, 110); }
         }
     }
 

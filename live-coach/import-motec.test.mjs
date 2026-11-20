@@ -22,6 +22,29 @@ function syntheticRecording(){
   return {header:{date:'01/01/2000',time:'00:00:00',track:'SYNTHETIC TEST',carLongName:'SYNTHETIC TEST'},channels,sha256:'synthetic'};
 }
 const options={game:'LMU',car:'synthetic',sourceUrl:'local:synthetic',author:'test',distanceBasis:'lmu-motec-lap-distance-m',lapNumber:2,expectedLapTime:20};
+function fiveHzRecording(){
+  const r=syntheticRecording();
+  for(const c of r.channels.values()) {const original=c.values;c.values=Float64Array.from({length:(original.length-1)*5+1},(_,i)=>{
+    const index=Math.floor(i/5),fraction=(i%5)/5;
+    if(c.name==='Lap Distance'&&original[index+1]>=original[index])return original[index]+(original[index+1]-original[index])*fraction;
+    return original[index];
+  });c.hz=5;c.count=c.values.length;}
+  return r;
+}
+test('only bounded leading pre-start negatives are omitted with real samples and origin preserved',()=>{
+  const r=fiveHzRecording();r.channels.get('Lap Distance').values[50]=-0.9;
+  const result=convert(r,options);
+  assert.equal(result.samples.length,99);assert.equal(result.samples[0].distanceM,20);assert.equal(result.samples[0].time,0);
+  assert.equal(result.samples[1].time,0.2);assert.equal(result.conditions.omittedPreStartSamples,'1');
+  assert.match(result.provenance,/Omitted 1 leading/);assert.equal(result.complete,false);assert.equal(result.trackLengthM,null);
+  assert.equal(result.conditions.recordedLapTimeSeconds,'20');
+});
+test('pre-start omission rejects excessive distance, excessive duration and negative interior samples',()=>{
+  let r=fiveHzRecording();r.channels.get('Lap Distance').values[50]=-5.1;assert.throws(()=>convert(r,options),/omission bound/);
+  r=fiveHzRecording();r.channels.get('Lap Distance').values.set([-3,-2,-1],50);assert.throws(()=>convert(r,options),/omission bound/);
+  r=fiveHzRecording();r.channels.get('Lap Distance').values[60]=-1;assert.throws(()=>convert(r,options),/Invalid normalized sample/);
+  r=fiveHzRecording();r.channels.get('Lap Distance').values.set([-1,-2],50);assert.throws(()=>convert(r,options),/backwards/);
+});
 test('sampled lap stays partial, raw distance and lateral preserved, no fake world coordinates',()=>{
   const result=convert(syntheticRecording(),options);
   assert.equal(result.complete,false);assert.equal(result.trackLengthM,null);assert.equal(result.samples.length,20);

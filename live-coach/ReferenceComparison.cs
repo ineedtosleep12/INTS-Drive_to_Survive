@@ -183,7 +183,7 @@ namespace IntsLiveCoach
             var a=samples[lo-1];var b=samples[lo];double distance=b.DistanceM-a.DistanceM;
             if(distance<=0||distance>100||b.Time-a.Time>1)return null;
             double t=(s-a.DistanceM)/distance;
-            return new ReferenceSample {DistanceM=s,Time=Mix(a.Time,b.Time,t),SpeedKph=Mix(a.SpeedKph,b.SpeedKph,t),Brake=Mix(a.Brake,b.Brake,t),Throttle=Mix(a.Throttle,b.Throttle,t),Steering=Mix(a.Steering,b.Steering,t),X=Mix(a.X,b.X,t),Z=Mix(a.Z,b.Z,t),PathLateralM=Mix(a.PathLateralM,b.PathLateralM,t)};
+            return new ReferenceSample {DistanceM=s,Time=Mix(a.Time,b.Time,t),SpeedKph=Mix(a.SpeedKph,b.SpeedKph,t),Brake=Mix(a.Brake,b.Brake,t),Throttle=Mix(a.Throttle,b.Throttle,t),Steering=Mix(a.Steering,b.Steering,t),SteeringDegrees=Mix(a.SteeringDegrees,b.SteeringDegrees,t),X=Mix(a.X,b.X,t),Z=Mix(a.Z,b.Z,t),PathLateralM=Mix(a.PathLateralM,b.PathLateralM,t)};
         }
         sealed class BrakeEvent {public double Start,Release=double.NaN,Uncertainty;}
         static List<BrakeEvent> Brakes(ReferenceLap lap)

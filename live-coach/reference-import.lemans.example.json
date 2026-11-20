@@ -1,0 +1,28 @@
+{
+  "game":"LMU",
+  "car":"Porsche 911 GT3 R (992)",
+  "layout":"unknown",
+  "gameVersion":"unknown",
+  "lapNumber":47,
+  "expectedLapTime":237.0996,
+  "distanceBasis":"lmu-motec-lap-distance-m",
+  "sourceUrl":"https://www.youtube.com/watch?v=KyBXVChpf8I",
+  "author":"PS_Racing",
+  "licence":"Author supplies a free personal setup/MoTeC download. Public redistribution permission not established; keep original and derived traces private.",
+  "provenance":"Creator video explicitly identifies LMU Porsche 992 at Le Mans. Original Drive folder 1_2gC7DL4-SxASqiLW6U6WfZ_z1AVdIuO, observed ZIP 992_LMGT3_LEMANS.zip file ID 13r2mVmpsMcrH7OxvbhIZnCTRNNurPAbf. ZIP SHA256 7d0dac0de40dd80496804e84eb6fa9ce2c75268962dd0531c7abad98147f3fe7. LDX fastest 3:57.100/displayed lap 1; actual Lap Number 47 selected by 237.0996-second Lap Start Elapsed Time difference and Last Laptime. Native-scoring channel mapping and game version unverified.",
+  "conditions":{
+    "sourceCarLabel":"Manthey DK Engineering 2026 #91:WEC",
+    "sourceCarClass":"GT3",
+    "sourceDownloadUrl":"https://drive.google.com/drive/folders/1_2gC7DL4-SxASqiLW6U6WfZ_z1AVdIuO",
+    "sourceLapTimeClaim":"3:57.100",
+    "authorAmbientCelsius":"21",
+    "authorTrackCelsius":"36",
+    "authorTrackGrip":"Saturated Grip",
+    "bop":"unknown",
+    "tyreCompound":"unknown",
+    "setup":"Archive includes Q and R SVM files; which produced this recorded lap unverified",
+    "weather":"unknown",
+    "distanceMapping":"MoTeC Lap Distance and Path Lateral in metres, 5Hz. Native channel alignment remains exploratory.",
+    "trackLimitsValidity":"No independent invalid-lap signal decoded. Author presents a hotlap; timing agreement does not certify track-limit validity."
+  }
+}

@@ -10,6 +10,7 @@ namespace IntsLiveCoach
     {
         public double Time, DistanceM;
         public double SpeedKph=double.NaN, Brake=double.NaN, Throttle=double.NaN, Steering=double.NaN;
+        public double SteeringDegrees=double.NaN; // Raw source angle for viewing; never normalized by an assumed lock.
         public double X=double.NaN, Z=double.NaN, PathLateralM=double.NaN;
         public ReferenceSample Copy() { return (ReferenceSample)MemberwiseClone(); }
     }
@@ -81,7 +82,7 @@ namespace IntsLiveCoach
             var samples=new List<ReferenceSample>(source.Length);
             foreach(object item in source)
             {
-                var s=Object(item,"sample");var point=new ReferenceSample {Time=Numeric(s,"time",true),DistanceM=Numeric(s,"distanceM",true),SpeedKph=Numeric(s,"speedKph",false),Brake=Numeric(s,"brake",false),Throttle=Numeric(s,"throttle",false),Steering=Numeric(s,"steering",false),X=Numeric(s,"x",false),Z=Numeric(s,"z",false),PathLateralM=Numeric(s,"pathLateralM",false)};
+                var s=Object(item,"sample");var point=new ReferenceSample {Time=Numeric(s,"time",true),DistanceM=Numeric(s,"distanceM",true),SpeedKph=Numeric(s,"speedKph",false),Brake=Numeric(s,"brake",false),Throttle=Numeric(s,"throttle",false),Steering=Numeric(s,"steering",false),SteeringDegrees=Numeric(s,"steeringDegrees",false),X=Numeric(s,"x",false),Z=Numeric(s,"z",false),PathLateralM=Numeric(s,"pathLateralM",false)};
                 if(samples.Count>0&&point.Time==samples[samples.Count-1].Time)
                 {
                     var previous=samples[samples.Count-1];
@@ -94,7 +95,7 @@ namespace IntsLiveCoach
         }
         static bool Same(double a,double b) {return a==b||(double.IsNaN(a)&&double.IsNaN(b));}
         static bool SameSample(ReferenceSample a,ReferenceSample b)
-        {return Same(a.DistanceM,b.DistanceM)&&Same(a.SpeedKph,b.SpeedKph)&&Same(a.Brake,b.Brake)&&Same(a.Throttle,b.Throttle)&&Same(a.Steering,b.Steering)&&Same(a.X,b.X)&&Same(a.Z,b.Z)&&Same(a.PathLateralM,b.PathLateralM);}
+        {return Same(a.DistanceM,b.DistanceM)&&Same(a.SpeedKph,b.SpeedKph)&&Same(a.Brake,b.Brake)&&Same(a.Throttle,b.Throttle)&&Same(a.Steering,b.Steering)&&Same(a.SteeringDegrees,b.SteeringDegrees)&&Same(a.X,b.X)&&Same(a.Z,b.Z)&&Same(a.PathLateralM,b.PathLateralM);}
         static void Label(string text,string name,bool required,int max)
         {
             if(text==null||(required&&string.IsNullOrWhiteSpace(text))||text.Length>max)throw new FormatException(name+": 이름/길이를 확인하세요.");
@@ -119,6 +120,7 @@ namespace IntsLiveCoach
                 if(Finite(TrackLengthM)&&s.DistanceM>TrackLengthM+5)throw new FormatException("표본이 명시한 트랙 길이를 벗어납니다.");
                 Optional(s.SpeedKph,0,550,"speedKph");Optional(s.Brake,0,1,"brake");Optional(s.Throttle,0,1,"throttle");Optional(s.Steering,-1,1,"steering");Optional(s.X,-10000000,10000000,"x");Optional(s.Z,-10000000,10000000,"z");
                 Optional(s.PathLateralM,-1000,1000,"pathLateralM");
+                Optional(s.SteeringDegrees,-2000,2000,"steeringDegrees");
                 if(Finite(s.X)!=Finite(s.Z))throw new FormatException("평면 위치는 x와 z를 함께 제공해야 합니다.");
                 previous=s;
             }
@@ -133,7 +135,7 @@ namespace IntsLiveCoach
             Validate();var serializer=new JavaScriptSerializer {MaxJsonLength=MaximumJsonCharacters,RecursionLimit=24};
             return serializer.Serialize(new {schemaVersion=SchemaVersion,game=Game,car=Car,track=Track,layout=Layout,gameVersion=GameVersion,trackLengthM=Number(TrackLengthM),distanceBasis=DistanceBasis,coordinateFrame=CoordinateFrame,lateralPositionBasis=LateralPositionBasis,
                 sourceUrl=SourceUrl,author=Author,recordedAt=RecordedAt,licence=Licence,provenance=Provenance,validity=Validity,complete=Complete,conditions=Conditions,
-                samples=Samples.Select(s=>new {time=s.Time,distanceM=s.DistanceM,speedKph=Number(s.SpeedKph),brake=Number(s.Brake),throttle=Number(s.Throttle),steering=Number(s.Steering),x=Number(s.X),z=Number(s.Z),pathLateralM=Number(s.PathLateralM)}).ToArray()});
+                samples=Samples.Select(s=>new {time=s.Time,distanceM=s.DistanceM,speedKph=Number(s.SpeedKph),brake=Number(s.Brake),throttle=Number(s.Throttle),steering=Number(s.Steering),steeringDegrees=Number(s.SteeringDegrees),x=Number(s.X),z=Number(s.Z),pathLateralM=Number(s.PathLateralM)}).ToArray()});
         }
     }
 }

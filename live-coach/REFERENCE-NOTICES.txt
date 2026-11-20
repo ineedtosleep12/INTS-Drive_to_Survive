@@ -56,3 +56,72 @@ Observations can identify where two recordings differ. Fuel, tyres, setup,
 weather, version, traffic and clock/sampling uncertainty prevent those
 differences alone from proving a driving-error cause. Sampling uncertainty
 is an engineering estimate, not a guaranteed error bound.
+
+0.3.0 ADDITIONAL DOWNLOADED RECORDINGS (personal data only)
+
+LMU Porsche 992 / Spa-Francorchamps / PS_Racing
+Video: https://www.youtube.com/watch?v=F2b4f4jgDj4
+Author folder: https://drive.google.com/drive/folders/1wYD6D3BoSclboqpnVrgK0XZvd-vP4_lH
+ZIP SHA256: 699193d44a6033973d46a79005c695e146834542ef1e1def330d980d5aca9108
+LD SHA256: 8da50ff914545c376d8df2817b94f77652dba004b32b6939cc46c23296d1bbe6
+Recorded 15/05/2026; matched lap 27 = 137.67284 s, 688 samples at 5 Hz.
+LDX displayed lap 3; direct Lap Start / Last / Best timing agreement.
+Measured air 10 C / road 20.556..20.792 C differ from video description
+21 / 28 C. Both retained, never silently treated as matched conditions.
+
+LMU Porsche 992 / Le Mans / PS_Racing
+Video: https://www.youtube.com/watch?v=KyBXVChpf8I
+Author folder: https://drive.google.com/drive/folders/1_2gC7DL4-SxASqiLW6U6WfZ_z1AVdIuO
+ZIP SHA256: 7d0dac0de40dd80496804e84eb6fa9ce2c75268962dd0531c7abad98147f3fe7
+LD SHA256: 08efea3a04ed296834aa307929c7ce330baba065f109773faa33f58b3ecff7d1
+Matched lap 47 = 237.0996 s, 1185 samples at 5 Hz. LDX displayed lap 1.
+One leading sample -0.90525 m was omitted; actual first retained sample
+8.75825 m becomes the sample-time origin. No zero-distance sample fabricated.
+Importer allows this only in first 0.4 s and -5..0 m; interior negatives reject.
+Measured air 21 C / road 36.342..36.4 C; fuel about 15.470..7.899 L.
+
+LMU Porsche 992 / Portimao / PS_Racing
+Video: https://www.youtube.com/watch?v=UYHhD2EDuKY
+Author folder: https://drive.google.com/drive/folders/1XrSirS6J8Eq0ngcGd5HuLSFmUz0YaAzk
+ZIP SHA256: 6a3d9ba910dad7049cb25a15130f6c6c6fc0aab62e038162fd941c32f7e34028
+LD SHA256: a356334bb46e63776c218797250d30e8f539a3052a3dd834bdf5763d09a7e2cb
+Matched lap 39 = 103.91308 s, 520 samples at 5 Hz. LDX displayed lap 2.
+Measured air 21 C / road 39.340..39.346 C; fuel about 12.050..9.123 L.
+
+ACC Porsche 992 / Nurburgring GP / PS_Racing — INPUT VIEW ONLY
+Video: https://www.youtube.com/watch?v=demCGTihz3A
+Author folder: https://drive.google.com/drive/folders/1q19HfODVerchh_9m8SmKHxbFyQ4Zmde4
+LD SHA256: cf062324345583f28100eb079442586fd875fc47cb53239fab68e989b4a51442
+LDX SHA256: 5208f38b4c0a546eed2a2346fbe80e600c4a24705df680b61df245924b45f2ed
+Recorded 07/07/2024. Author states ACC 1.10.2 / 2024 BoP / 23 C air / 27 C road.
+LDX beacons 619.359..733.108 s = 113.749 s correspond to video 1:53.750.
+LDX fastest 1:53.680 is a different lap and was not substituted.
+6825 actual samples at 60 Hz; SPEED m/s converted to km/h, BRAKE/THROTTLE
+percent to 0..1. STEERANGLE degrees retained in companion time-series file.
+No native course distance, normalized track position, GPS or world coordinates.
+App's view-only wrapper uses explicit trapezoidal travelled-distance integral
+as a graph axis, not course position. It cannot enable lap-distance comparison
+or reference overlay. Native steering remains unknown rather than guessed.
+
+All additional records keep unknown track-limit validity and partial boundary
+coverage. LMU game/physics versions and exporter mapping remain unverified.
+Original and transformed data may be used locally; no public redistribution
+licence was found. Public repository/distribution contains only converters,
+tests, source information and import configuration examples.
+
+LIVE COACHING INTERPRETATION
+Fixed reference distance zones are derived from sustained brake/lift/steer
+patterns and stable exits; they are not official named corners. Three distance
+thirds describe loss location without claiming an apex/phase detector.
+The independent straight/safe-exit gate waits before delivery and cancels at
+the next corner, invalidity, pits, replay, gaps or context changes. Source
+sample spacing and native scoring age gate small differences. Advice is one
+controlled exercise, not an inferred causal diagnosis or guaranteed optimum.
+Steering unwind uses each trace's own relative peak; no degrees/sign matching.
+
+Primary teaching references for tyre grip sharing and gradual brake/steering
+release, independently read when implementing the explanations:
+https://driver61.com/uni/trail-braking/
+https://driver61.com/uni/corner-exit/
+https://driver61.com/uni/grip/
+Actual game driving and final native UI still require user-environment testing.
