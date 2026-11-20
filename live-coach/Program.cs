@@ -32,6 +32,8 @@ namespace IntsLiveCoach
         private readonly Label setup = new Label();
         private readonly ComboBox game = new ComboBox(), discipline = new ComboBox();
         private readonly TabControl tabs = new TabControl();
+        private readonly ReferencePanel referencePanel = new ReferencePanel();
+        private int lastCapturedLapCount;
         private readonly ListBox lessons = new ListBox();
         private readonly RichTextBox lessonText = new RichTextBox();
         private readonly LinkLabel lessonSource = new LinkLabel();
@@ -56,7 +58,7 @@ namespace IntsLiveCoach
         public CoachWindow()
         {
             Text = "INTS Live Coach · 실전 주행 & 원리";
-            ClientSize = new Size(780, 770); MinimumSize = new Size(720, 700);
+            ClientSize = new Size(1020, 900); MinimumSize = new Size(900, 760);
             StartPosition = FormStartPosition.CenterScreen; BackColor = Palette.Background;
             ForeColor = Palette.Text; Font = new Font("Malgun Gothic", 10);
             var selectors = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 52, Padding = new Padding(20, 10, 0, 0), BackColor = Palette.Panel };
@@ -67,7 +69,9 @@ namespace IntsLiveCoach
             tabs.Dock = DockStyle.Fill;
             var practice = new TabPage("실전 코치") { BackColor = Palette.Background, AutoScroll = true };
             var guide = new TabPage("원리 배우기 · 게임 없이 보기") { BackColor = Palette.Background, Padding = new Padding(16) };
-            tabs.TabPages.Add(practice); tabs.TabPages.Add(guide); Controls.Add(tabs); Controls.Add(selectors);
+            var compare = new TabPage("핫랩과 비교") { BackColor = Palette.Background };
+            compare.Controls.Add(referencePanel);
+            tabs.TabPages.Add(practice); tabs.TabPages.Add(compare); tabs.TabPages.Add(guide); Controls.Add(tabs); Controls.Add(selectors);
             var grid = new TableLayoutPanel { Dock = DockStyle.Top, Height = 650, Padding = new Padding(25, 16, 25, 0), ColumnCount = 1, RowCount = 10 };
             foreach (float height in new float[] { 43, 37, 82, 45, 54, 70, 95, 55, 46, 50 }) grid.RowStyles.Add(new RowStyle(SizeType.Absolute, height));
             practice.Controls.Add(grid);
@@ -97,7 +101,7 @@ namespace IntsLiveCoach
             guide.Controls.Add(lessonText); guide.Controls.Add(lessons); guide.Controls.Add(lessonSource);
             lessons.SelectedIndexChanged += delegate { ShowLesson(); }; lessonSource.LinkClicked += delegate { var item = lessons.SelectedItem as PrincipleLesson; if (item != null && item.SourceUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase)) System.Diagnostics.Process.Start(item.SourceUrl); };
             game.SelectedIndexChanged += delegate { ChangeSource(); };
-            discipline.SelectedIndexChanged += delegate { lock (engineLock) { selectedDiscipline = (DrivingDiscipline)discipline.SelectedIndex; engine.Reset(); principles.Reset(); haveFrames = false; generation++; lastPrinciple = null; } feedbackUntil = DateTime.MinValue; speech.SpeakAsyncCancelAll(); LoadLessons(); UpdateSetup(); };
+            discipline.SelectedIndexChanged += delegate { lock (engineLock) { selectedDiscipline = (DrivingDiscipline)discipline.SelectedIndex; engine.Reset(); principles.Reset(); haveFrames = false; lastCapturedLapCount=0; generation++; lastPrinciple = null; } feedbackUntil = DateTime.MinValue; speech.SpeakAsyncCancelAll(); LoadLessons(); UpdateSetup(); };
             LoadLessons();
             Shown += delegate { hotkey = Native.RegisterHotKey(Handle, HotkeyId, 0x4003, (uint)Keys.O); if (!hotkey) passThrough.Text = "마우스 통과 (이 창에서 해제)"; poll = new System.Threading.Timer(Poll, null, 0, 50); };
         }
@@ -117,7 +121,7 @@ namespace IntsLiveCoach
                     default: reader = new LmuReader(); break;
                 }
                 selectedGame = gameNames[game.SelectedIndex]; lastTime = double.NaN; lastFreshUtc = DateTime.MinValue; disconnected = true;
-                engine.Reset(); principles.Reset(); haveFrames = false; lastPrinciple = null;
+                engine.Reset(); principles.Reset(); haveFrames = false; lastCapturedLapCount=0; lastPrinciple = null;
             }
             export.Enabled = false; feedbackUntil = DateTime.MinValue; speech.SpeakAsyncCancelAll();
             if (game.SelectedIndex == 4 || game.SelectedIndex == 5) discipline.SelectedIndex = 1;
@@ -165,12 +169,22 @@ namespace IntsLiveCoach
                 TelemetryFrame frame; string status;
                 bool read = reader.TryRead(out frame, out status);
                 CoachView view = null; CoachPrincipleView principleView = null;
+                ReferenceLap completedLap=null;
+                string completedLapError="";
                 bool fresh = read && frame != null && (!double.IsNaN(frame.Time)) && (frame.Time != lastTime);
                 if (fresh)
                 {
                     lastFreshUtc = DateTime.UtcNow; lastTime = frame.Time; disconnected = false;
                     bool canCompare = selectedDiscipline == DrivingDiscipline.Race && !frame.TimeIsCaptureClock && frame.ValidLapKnown && !double.IsNaN(frame.TrackLength) && !double.IsNaN(frame.LapDistance);
-                    if (canCompare) view = engine.Update(frame);
+                    if (canCompare)
+                    {
+                        view = engine.Update(frame);
+                        if(view.CompletedLaps>0 && view.CompletedLaps!=lastCapturedLapCount)
+                        {
+                            CapturedLap.TryCreate(selectedGame,engine.GetLatestCompleteLap(),out completedLap,out completedLapError);
+                        }
+                        lastCapturedLapCount=view.CompletedLaps;
+                    }
                     else
                     {
                         engine.Disconnect("이 모드에서는 유효한 거리 랩 비교를 수집하지 않습니다.");
@@ -180,12 +194,12 @@ namespace IntsLiveCoach
                 }
                 else if (!reader.LastReadTransient || (DateTime.UtcNow - lastFreshUtc).TotalSeconds >= 1.5)
                 {
-                    if (!disconnected) { view = engine.Disconnect("주행 데이터가 멈췄습니다. 연결되면 기준 랩부터 다시 확인합니다."); principles.Disconnect("주행 데이터 대기"); disconnected = true; }
+                    if (!disconnected) { view = engine.Disconnect("주행 데이터가 멈췄습니다. 연결되면 기준 랩부터 다시 확인합니다."); lastCapturedLapCount=0; principles.Disconnect("주행 데이터 대기"); disconnected = true; }
                     frame = null;
                 }
                 else return; // A short writer lock/duplicate is not a disconnection.
                 TelemetryFrame captured = frame; CoachView capturedView = view; CoachPrincipleView capturedPrinciple = principleView; string capturedStatus = status; int capturedGeneration = generation;
-                if (!closing && IsHandleCreated) BeginInvoke((Action)delegate { if (capturedGeneration == generation) Apply(captured, capturedView, capturedPrinciple, capturedStatus); });
+                if (!closing && IsHandleCreated) BeginInvoke((Action)delegate { if (capturedGeneration == generation) {if(completedLap!=null)referencePanel.SetOwnLap(completedLap);else if(completedLapError.Length>0)referencePanel.SetCaptureError(completedLapError);Apply(captured, capturedView, capturedPrinciple, capturedStatus);} });
                 }
             }
             catch (Exception ex)

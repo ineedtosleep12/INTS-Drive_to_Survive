@@ -27,6 +27,7 @@ namespace IntsLiveCoach
             Near(frame.Steering, -.32, "SDK steering negative means left");
             Check(Double.IsNaN(frame.Clutch), "unverified clutch polarity must not trigger a pedal-action verdict");
             Near(frame.LapDistance, 600, "scoring lap distance");
+            Near(frame.PathLateralM, -3.25, "scoring lateral position on approximate center path");
             Near(frame.TrackLength, 5793, "scoring track length");
             Near(frame.DistanceAgeSeconds, .1, "session timestamp delta records scoring distance age");
             Near(frame.YawRate, -.7, "local Y angular velocity");
@@ -103,6 +104,8 @@ namespace IntsLiveCoach
             Check(LmuReader.TryDecode(pits, out frame, out status) && frame.InPit, "pit flag survives decode for coaching exclusion");
             byte[] optional = Fixture(); F64(optional, Player + 524, Double.NaN);
             Check(LmuReader.TryDecode(optional, out frame, out status) && Double.IsNaN(frame.FuelLitres), "unavailable optional sensor stays unknown");
+            F64(optional, Score + 112, Double.NaN);
+            Check(LmuReader.TryDecode(optional, out frame, out status) && Double.IsNaN(frame.PathLateralM), "missing lateral position must not become a racing line");
 
             string temp = Path.Combine(Path.GetTempPath(), "ints-lmu-sdk-fixture-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(temp);
@@ -140,6 +143,7 @@ namespace IntsLiveCoach
             bytes[Score + 506] = 2;
             I16(bytes, Score + 100, 2);
             F64(bytes, Score + 104, 600);
+            F64(bytes, Score + 112, -3.25);
             F64(bytes, Score + 256, 70);
             I32(bytes, Player, 42);
             F64(bytes, Player + 12, 100.25);

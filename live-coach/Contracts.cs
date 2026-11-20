@@ -14,6 +14,8 @@ namespace IntsLiveCoach
         public double Time = double.NaN;
         public double DistanceAgeSeconds = double.NaN;
         public double LapDistance = double.NaN;
+        // LMU SDK: lateral position relative to a very approximate center path.
+        public double PathLateralM = double.NaN;
         public double TrackLength = double.NaN;
         public double SpeedKph = double.NaN;
         public double Throttle = double.NaN;

@@ -1,0 +1,25 @@
+{
+  "game": "LMU",
+  "car": "Porsche 911 GT3 R (992)",
+  "layout": "unknown",
+  "gameVersion": "unknown",
+  "lapNumber": 11,
+  "expectedLapTime": 109.06884,
+  "distanceBasis": "lmu-motec-lap-distance-m",
+  "sourceUrl": "https://www.youtube.com/watch?v=jtPPwxAlu0c",
+  "author": "PS_Racing",
+  "licence": "Author offers a free personal download. Redistribution of source or derived traces is not authorized by this template.",
+  "provenance": "Example conversion options for the creator-linked Porsche 992 Monza recording. Obtain the original recording from the author's link; no recording is bundled. Verify channels and game/car/track identity for every different file.",
+  "conditions": {
+    "sourceLapTimeClaim": "1:49.069",
+    "authorAmbientCelsius": "21",
+    "authorTrackCelsius": "30",
+    "authorTrackGrip": "Saturated Grip",
+    "trackLimitsValidity": "Author presents a hotlap; no independent invalid-lap channel decoded",
+    "distanceMapping": "Recorded MoTeC Lap Distance; native scoring correspondence remains unverified",
+    "pathLateralMapping": "Recorded MoTeC Path Lateral; native lateral correspondence remains unverified",
+    "timingResolution": "Distance5Hz and controls10Hz; output at5Hz. No invented finish-line timestamps.",
+    "bop": "unknown",
+    "tyreCompound": "unknown"
+  }
+}

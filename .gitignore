@@ -11,3 +11,6 @@ coverage/
 *.zip
 grip-lab-runs.csv
 ints-drive-runs.csv
+research-reference-*/
+live-coach/references/*.json
+!live-coach/references/catalog.json

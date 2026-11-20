@@ -92,7 +92,7 @@ namespace IntsLiveCoach
         { return Finite(value)?Signed(Math.Round(value/10)*10,"F0"):"미측정"; }
         static TelemetryFrame Copy(TelemetryFrame f)
         {
-            return new TelemetryFrame { Time=f.Time, LapDistance=f.LapDistance, TrackLength=f.TrackLength,
+            return new TelemetryFrame { Time=f.Time, LapDistance=f.LapDistance, PathLateralM=f.PathLateralM, TrackLength=f.TrackLength,
                 SpeedKph=f.SpeedKph, Throttle=f.Throttle, Brake=f.Brake, Clutch=f.Clutch, Steering=f.Steering,
                 FuelLitres=f.FuelLitres, DistanceAgeSeconds=f.DistanceAgeSeconds, X=f.X, Y=f.Y, Z=f.Z, YawRate=f.YawRate, LateralG=f.LateralG,
                 Handbrake=f.Handbrake, LongitudinalG=f.LongitudinalG, LocalVelocityRight=f.LocalVelocityRight, LocalVelocityForward=f.LocalVelocityForward,
@@ -339,6 +339,7 @@ namespace IntsLiveCoach
             f.SpeedKph=Blend(a.SpeedKph,b.SpeedKph,t);f.Brake=Blend(a.Brake,b.Brake,t);f.Throttle=Blend(a.Throttle,b.Throttle,t);
             f.Steering=Blend(a.Steering,b.Steering,t);f.Clutch=Blend(a.Clutch,b.Clutch,t);f.FuelLitres=Blend(a.FuelLitres,b.FuelLitres,t);
             f.DistanceAgeSeconds=Blend(a.DistanceAgeSeconds,b.DistanceAgeSeconds,t);
+            f.PathLateralM=Blend(a.PathLateralM,b.PathLateralM,t);
             f.X=Blend(a.X,b.X,t);f.Y=Blend(a.Y,b.Y,t);f.Z=Blend(a.Z,b.Z,t);f.YawRate=Blend(a.YawRate,b.YawRate,t);f.LateralG=Blend(a.LateralG,b.LateralG,t);
             return f;
         }
@@ -377,8 +378,13 @@ namespace IntsLiveCoach
         {
             return new { time=Number(f.Time),lap=f.Lap,distanceM=Number(f.LapDistance),speedKph=Number(f.SpeedKph),
                 brake=Number(f.Brake),throttle=Number(f.Throttle),steering=Number(f.Steering),clutch=Number(f.Clutch),
-                fuelLitres=Number(f.FuelLitres),distanceAgeSeconds=Number(f.DistanceAgeSeconds),gear=f.Gear,validityKnown=f.ValidLapKnown,validLap=f.IsValidLap };
+                fuelLitres=Number(f.FuelLitres),distanceAgeSeconds=Number(f.DistanceAgeSeconds),pathLateralM=Number(f.PathLateralM),x=Number(f.X),y=Number(f.Y),z=Number(f.Z),
+                track=f.Track,car=f.Car,gameVersion=f.GameVersion,trackLengthM=Number(f.TrackLength),
+                gear=f.Gear,validityKnown=f.ValidLapKnown,validLap=f.IsValidLap };
         }
+        // Call under the same lock as Update. Never expose the mutable stored lap.
+        public TelemetryFrame[] GetLatestCompleteLap()
+        { return previousValid==null?new TelemetryFrame[0]:previousValid.Frames.Select(Copy).ToArray(); }
         public string ExportJson()
         {
             JavaScriptSerializer serializer=new JavaScriptSerializer { MaxJsonLength=32*1024*1024 };

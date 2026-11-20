@@ -286,6 +286,7 @@ namespace IntsLiveCoach
             // Distance is the game's scoring channel, not a fabricated high-rate
             // estimate. It may update less frequently than pedals / speed.
             frame.LapDistance = distance;
+            frame.PathLateralM = Optional(F64(bytes, scoring + 112), -1000, 1000);
             frame.TrackLength = length;
             frame.SpeedKph = speed;
             frame.Throttle = throttle;

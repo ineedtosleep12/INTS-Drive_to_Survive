@@ -1,0 +1,58 @@
+REFERENCE RECORDINGS / INTEROPERABILITY NOTES — 2026-11-21
+
+Source: PS_Racing, LMU Porsche 992 LMGT3 R, Monza, advertised 1:49.069.
+Original video: https://www.youtube.com/watch?v=jtPPwxAlu0c
+Creator-linked download: https://drive.google.com/drive/folders/1GACcrJyLckzcjllVK45ROfGzPZMp3Sak
+Archive: 992_LMGT3_MONZA.zip
+Archive SHA256: 0290fdf40f1e678ab2efbf2f6bef4bb9392d22a96fb1d859ad44377f2a765f6c
+LD SHA256: 1f66509528c84bceba8076214af4624b70d3f5269bd5e81c3d5538efd6d0dabf
+LD local recording date: 24/07/2026, timezone unknown.
+
+The actual public author-supplied LD/LDX files were inspected, not inferred
+from video pixels. Game Last Laptime, Best Laptime and consecutive Lap Start
+Elapsed Time difference agree at 109.06884 s. LDX displays fastest lap 4;
+the matching actual Lap Number channel is 11. This timing agreement is NOT
+an independent check of track-limit validity. No invalid-lap flag was decoded.
+Validity therefore remains unknown. Physics version, BoP and tyre compound
+remain unknown. The source is a recorded lap, not an authenticated optimum.
+
+The creator offers a free personal setup/MoTeC download; a licence to publicly
+redistribute original or derived traces was not found. Neither trace is
+committed to the public repository or included in the public distribution.
+Personal local conversion is stored separately and retains provenance.
+No purchased data, game assets or proprietary SDK source is redistributed.
+
+MoTeC format reading references (independent implementation, no parser code
+copied, no third-party executable run):
+https://pages.tobi.lutke.com/racingmagick/motec_format
+https://github.com/snipem/ld-cli/blob/main/parse.go
+
+Importer: bounded LD header/channel traversal and unit-checked conversion.
+Raw Lap Distance (metres) is used, never integrated speed or normalized
+travelled distance. Input channels 10 Hz; distance/path-lateral 5 Hz. The
+export keeps 545 actual samples at 5 Hz from 9.40125 to 5772.7755 m and
+does not invent start/finish crossing samples. Partial coverage prevents
+full-lap delta display. Clock alignment is the LD channel time axis, not
+an independently measured sensor-latency correction.
+
+GPS exists but its inverse mapping to native LMU world X/Z is not verified.
+World X/Z are omitted. Path Lateral is preserved as an independent scalar;
+it is not a reconstructed map or road edge, and its sign is not labelled as
+driver-left/right. The installed LMU SDK describes mPathLateral as position
+relative to a *very approximate* centre path. Our compatible reader takes
+this double at scoring-row offset 112 (after mLapDist at 104). Synthetic
+decoder tests check the offset and missing values. No SDK code is bundled.
+
+The exact LD exporter was not identified. Its generic header device is ADL;
+that does not establish a named logger. Native scoring and MoTeC basis IDs
+remain distinct. Explicit exploratory alignment allows only the known LMU
+pair, compatible known lengths or a near-complete partial recording covering
+at least 98% of known native length. Unknown source length stays unknown.
+Game/car/track, known layout, validity and physics-version gates still apply.
+Warnings remain visible in the comparison evidence tab. Actual in-game
+channel/time/lateral mapping and the final integrated UI are not yet verified.
+
+Observations can identify where two recordings differ. Fuel, tyres, setup,
+weather, version, traffic and clock/sampling uncertainty prevent those
+differences alone from proving a driving-error cause. Sampling uncertainty
+is an engineering estimate, not a guaranteed error bound.
