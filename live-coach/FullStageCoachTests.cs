@@ -24,6 +24,83 @@ namespace IntsLiveCoach
             var json=new JavaScriptSerializer();
             return json.Deserialize<Dictionary<string,object>>(json.Serialize(coach.Snapshot()))[name] as Dictionary<string,object>;
         }
+        static TelemetryFrame Timed(int tick,double distance,double speedScale=1,double lane=0)
+        {
+            var f=Frame(tick,distance,100);
+            f.Time=tick*.1*speedScale;
+            f.StageElapsedSeconds=f.Time;
+            f.Car="EA WRC 차량 (ID 미제공)"; f.Track="EA WRC 스테이지 (ID 미제공)";
+            f.X=distance; f.Y=0; f.Z=lane;
+            f.OnTrack=distance<100;
+            return f;
+        }
+        static CoachPrincipleView Pass(FullStageCoach coach,double pace,double lane)
+        {
+            CoachPrincipleView result=null;
+            // Quarter gates and the end fall between samples.
+            for (int i=0;i<=34;i++) result=coach.Update(Timed(i,i*3,pace,lane));
+            return result;
+        }
+        static Dictionary<string,object> Comparison(FullStageCoach c,string name)
+        { return Part(c,name)["repeatComparison"] as Dictionary<string,object>; }
+        static void CheckRepeats(Action<bool,string> check)
+        {
+            var c=new FullStageCoach();
+            check(!c.ArmRepeat(" ", "Rally1") && !c.ArmRepeat("Vissi", ""), "both per-run labels needed");
+            c.ArmRepeat("Wrong direction","Puma Rally1");
+            check(c.RepeatWaitingForStart && c.CancelPendingRepeat() && !c.RepeatAttemptOpen && !c.CancelPendingRepeat(),
+                "can cancel and rename an attempt while waiting without any driving frames");
+            Pass(c,1,0);check(Comparison(c,"lastRun")==null,"unarmed run never becomes a reference");
+            c.ArmRepeat("Vissi forward","Puma Rally1");
+            c.Update(Timed(20,40));check(c.RepeatAttemptOpen && Comparison(c,"current")==null,"arming late waits for the upcoming start");
+            var first=Pass(c,1,0);
+            check(!c.RepeatAttemptOpen && first.Observation.Contains("내 기준 저장") && c.ReviewText().Contains("75–100%"),"first fully observed run sets reference");
+            var a=Comparison(c,"lastRun");var gates=(IList)a["splits"];
+            var firstGate=(Dictionary<string,object>)gates[0];
+            check(gates.Count==4 && Math.Abs(Convert.ToDouble(firstGate["gameSeconds"])-.8333333)<.00001 &&
+                firstGate["differenceSeconds"]==null,"native split interpolated in stage timer, no fabricated zero delta");
+            Pass(c,.9,1);check(Comparison(c,"lastRun")==null,"a retry cannot borrow old driver ID confirmation");
+            c.ArmRepeat("Vissi forward","Puma Rally1");
+            for(int i=0;i<=10;i++)c.Update(Timed(i,i*3,1.2,1));
+            check(c.RepeatAttemptOpen && c.Update(Timed(11,33,1.2,1)).Status.Contains("1구간") && c.ReviewText().Contains("증가"),"live distance split compared before finish");
+            for(int i=12;i<=34;i++)c.Update(Timed(i,i*3,1.2,1));
+            var second=Comparison(c,"lastRun");var secondGate=(Dictionary<string,object>)((IList)second["splits"])[0];
+            check(c.LastReport.Observation.Contains("전체 0.7초 증가") && Math.Abs(Convert.ToDouble(secondGate["differenceSeconds"])-1.0/6)<.0001,
+                "fixed baseline, positive zone and stage loss");
+            c.ArmRepeat("Vissi forward","Puma Rally1");
+            check(Pass(c,.75,1).Observation.Contains("전체 0.8초 단축"),"third run still uses first baseline");
+            c.ArmRepeat("Vissi forward","Puma Rally1");
+            c.Update(Timed(0,0)); for(int i=1;i<=34;i++)c.Update(Timed(i,i*3,1,i>=15?150:0));
+            var wrong=Comparison(c,"lastRun");
+            check(c.LastReport.Observation.Contains("실제 위치가 다름") && ((Dictionary<string,object>)((IList)wrong["splits"])[0])["differenceSeconds"]==null,
+                "diverging named course suppresses comparisons, including partial exported deltas");
+            c.ArmRepeat("Vissi reverse","Puma Rally1");check(Pass(c,1.2,1).Observation.Contains("내 기준 저장"),"different driver-declared direction has its own baseline");
+            c.ArmRepeat("Vissi forward","Rally2");check(Pass(c,1,1).Observation.Contains("내 기준 저장"),"different vehicle has its own baseline");
+            c.ArmRepeat("Vissi forward","Puma Rally1");
+            c.Update(Timed(0,0)); c.Update(Timed(1,3)); c.Interrupt();
+            check(!c.RepeatAttemptOpen && c.LastReport.Observation.Contains("비교 보류"),"interruption cannot replace a baseline");
+            c.ArmRepeat("Vissi forward","Puma Rally1");
+            for(int i=0;i<=34;i++){var f=Timed(i,i*3);f.X=Double.NaN;c.Update(f);}
+            check(c.LastReport.Observation.Contains("위치나"),"missing source position holds timing comparison");
+            c.Reset();
+            c.ArmRepeat("Hafren South","Alpine");
+            for(int i=0;i<=30;i++){var f=Acr(i);f.Brake=.3;f.Steering=i<15?.3:0;c.Update(f);}
+            check(c.FinishManually().Observation.Contains("내 기준 저장"),"first manually ended ACR observed pass freezes input profile");
+            c.ArmRepeat("Hafren South","Alpine");
+            for(int i=0;i<=30;i++){var f=Acr(i);f.Brake=.3;f.Steering=i<6?.3:0;c.Update(f);}
+            var observed=c.FinishManually();var acr=Comparison(c,"lastRun");
+            check(observed.Observation.Contains("30.0%p 감소") && ((IList)acr["splits"]).Count==0 &&
+                Math.Abs(Convert.ToDouble(acr["brakeSteerPercent"])-20)<.001,
+                "ACR compares measured time share, never a geographical or elapsed-time split");
+            c.ArmRepeat("Hafren South","Alpine");
+            for(int i=0;i<=20;i++){var f=Acr(i);f.Car="Other native car";c.Update(f);}
+            check(c.FinishManually().Observation.Contains("내 기준 저장"),"ACR native car also participates in identity");
+            c.ArmRepeat("Hafren South","Alpine");
+            for(int i=0;i<=30;i++)c.Update(Acr(i));
+            c.Interrupt();check(c.FinishManually().Observation.Contains("비교 보류"),"post-disconnect manual recap cannot certify the observed interval");
+            c.Reset();c.ArmRepeat("Vissi forward","Puma Rally1");
+            check(Pass(c,1,0).Observation.Contains("내 기준 저장"),"explicit practice change clears references");
+        }
         public static int Run()
         {
             int count=0;
@@ -99,6 +176,7 @@ namespace IntsLiveCoach
             coach.Update(replay); check(Part(coach,"current")==null,"replay cannot begin a run");
             for(int i=0;i<20;i++) coach.Update(Acr(i));
             check(coach.FinishManually().Title.Contains("직접 종료") && !coach.LastReport.NewFeedback,"manual end while connected");
+            CheckRepeats(check);
             return count;
         }
     }

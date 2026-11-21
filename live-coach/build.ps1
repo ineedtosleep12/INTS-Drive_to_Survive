@@ -9,7 +9,7 @@ $taskSpeech = Get-ChildItem -LiteralPath $taskSpeechRoot -Filter System.Speech.d
 if (-not $taskSpeech) { throw 'Windows System.Speech assembly not found.' }
 New-Item -ItemType Directory -Path $taskBuild -Force | Out-Null
 $taskCommon = @('/nologo','/utf8output','/optimize+','/platform:x64','/unsafe','/r:System.Core.dll','/r:System.Web.Extensions.dll')
-$taskSources = @('Contracts.cs','LmuReader.cs','LmuCircuitGuide.cs','LmuCoursePractice.cs','AssettoReader.cs','AccTrackLengthProvider.cs','AcrReader.cs','Ams2Reader.cs','WrcReader.cs','WrcPracticeSetup.cs','CoachEngine.cs','PrincipleCoach.cs','DriftPracticeCoach.cs','ContinuousDriftCoach.cs','RallySkillCoach.cs','FullStageCoach.cs','ReferenceLap.cs','ReferenceComparison.cs','CapturedLap.cs','ReferenceLiveSettings.cs','ReferenceLibrary.cs','AccReplayAlignment.cs','LiveReferenceCoach.cs') | ForEach-Object { Join-Path $taskRoot $_ }
+$taskSources = @('Contracts.cs','LmuReader.cs','LmuCircuitGuide.cs','LmuCoursePractice.cs','AssettoReader.cs','AccTrackLengthProvider.cs','AcrReader.cs','Ams2Reader.cs','WrcReader.cs','WrcPracticeSetup.cs','CoachEngine.cs','PrincipleCoach.cs','DriftPracticeCoach.cs','ContinuousDriftCoach.cs','TougeRunCoach.cs','RallySkillCoach.cs','FullStageCoach.cs','RallyStageComparison.cs','ReferenceLap.cs','ReferenceComparison.cs','CapturedLap.cs','ReferenceLiveSettings.cs','ReferenceLibrary.cs','AccReplayAlignment.cs','LiveReferenceCoach.cs') | ForEach-Object { Join-Path $taskRoot $_ }
 & $taskCompiler @taskCommon '/target:winexe' '/main:IntsLiveCoach.Program' '/r:System.Drawing.dll' '/r:System.Windows.Forms.dll' ("/r:" + $taskSpeech) ("/out:" + (Join-Path $taskBuild 'INTS-Live-Coach.exe')) @taskSources (Join-Path $taskRoot 'Program.cs') (Join-Path $taskRoot 'PracticePanel.cs') (Join-Path $taskRoot 'ReferencePanel.cs') (Join-Path $taskRoot 'CircuitPanel.cs')
 if ($LASTEXITCODE -ne 0) { throw 'Live Coach build failed.' }
 $taskPublicLaps = Join-Path $taskRoot 'public-references'
@@ -23,7 +23,7 @@ if ($Test) { & (Join-Path $taskBuild 'INTS-Coach-Checks.exe'); if ($LASTEXITCODE
 Write-Output ("Built: " + (Join-Path $taskBuild 'INTS-Live-Coach.exe'))
 if ($Package) {
     Add-Type -AssemblyName System.IO.Compression.FileSystem
-    $publicZip = Join-Path $taskBuild 'INTS-Live-Coach-0.7.0-public.zip'
+    $publicZip = Join-Path $taskBuild 'INTS-Live-Coach-0.8.0-public.zip'
     $zipTemp = $publicZip + '.' + [Guid]::NewGuid().ToString('N') + '.tmp'
     try {
         $zip = [IO.Compression.ZipFile]::Open($zipTemp, 'Create')

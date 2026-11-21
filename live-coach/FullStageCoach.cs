@@ -10,6 +10,7 @@ namespace IntsLiveCoach
     {
         const string Lesson = "rally-stage";
         readonly RallySkillCoach corners = new RallySkillCoach();
+        readonly RallyStageComparison repeat = new RallyStageComparison();
         readonly string sessionId = Guid.NewGuid().ToString("N");
         readonly List<Section> sections = new List<Section>();
         readonly List<Turn> notes = new List<Turn>();
@@ -67,6 +68,15 @@ namespace IntsLiveCoach
             var copy = cue.Copy(); copy.NewFeedback = false; return copy;
         }
         public CoachPrincipleView LastReport { get { return Repeat(lastReport); } }
+        public bool RepeatAttemptOpen { get { return repeat.AttemptOpen; } }
+        public bool RepeatWaitingForStart { get { return repeat.WaitingForStart; } }
+        public bool CancelPendingRepeat() { return repeat.CancelPending(); }
+        public bool ArmRepeat(string stageName,string carName)
+        {
+            if (!repeat.Arm(stageName,carName)) return false;
+            Interrupt(); holdReport=false; previous=null; current=lastReport=null;
+            return true;
+        }
         public bool CanFinishManually
         {
             get { return previous != null && previous.Time-firstTime >= 1 &&
@@ -78,7 +88,7 @@ namespace IntsLiveCoach
         public void Reset()
         {
             active = holdReport = false; previous = null; current = lastReport = null;
-            lastRun = null; lastState = identity = null; lastReviewText=""; sections.Clear(); notes.Clear(); corners.Reset();
+            lastRun = null; lastState = identity = null; lastReviewText=""; sections.Clear(); notes.Clear(); corners.Reset(); repeat.Reset();
         }
         public void Interrupt()
         {
@@ -97,6 +107,7 @@ namespace IntsLiveCoach
             runId = sessionId + "-" + (++runNumber);
             identity = Identity(frame); firstTime = frame.Time; distanceBased = HasDistance(frame);
             firstDistance = lastDistance = distanceBased ? frame.LapDistance : double.NaN;
+            repeat.Begin(frame,distanceBased);
             stageLength = distanceBased ? frame.TrackLength : double.NaN;
             stageClock = frame.StageElapsedSeconds; highestSpeed = 0;
             turnCount = switches = steeringSide = candidateSide = 0;
@@ -147,6 +158,7 @@ namespace IntsLiveCoach
             if (!f.OnTrack && !reachedEnd) { Interrupt(); return LastReport ?? Waiting(); }
             double dt = previous == null ? 0 : f.Time - previous.Time;
             if (dt > .5) { corners.Reset(); steeringSide = candidateSide = 0; switchUntil = double.NegativeInfinity; }
+            repeat.Observe(f);
             Account(f, dt);
             if (previous == null) previous = new TelemetryFrame {Track=f.Track,Car=f.Car,GameVersion=f.GameVersion,TimeIsCaptureClock=f.TimeIsCaptureClock};
             previous.Time = f.Time; previous.LapDistance = f.LapDistance; previous.SpeedKph = f.SpeedKph;
@@ -256,11 +268,13 @@ namespace IntsLiveCoach
                 (lastDistance/1000).ToString("0.00", CultureInfo.InvariantCulture) + "/" +
                 (stageLength/1000).ToString("0.00", CultureInfo.InvariantCulture)+" km"
                 : "관측 "+Clock(previous.Time-firstTime);
-            return where+" · 코너 복기 "+turnCount+" · 조향 전환 "+switches;
+            string comparison=repeat.Progress;
+            return comparison.Length>0 ? where+" · "+comparison : where+" · 코너 복기 "+turnCount+" · 조향 전환 "+switches;
         }
         CoachPrincipleView Seal(string reason, string title)
         {
             var lastTurn = notes.LastOrDefault(n => n.Kind == "corner") ?? notes.LastOrDefault();
+            string comparison=repeat.Finish(reason);
             var report = new CoachPrincipleView { LessonId=Lesson, Status=Progress(), Title=title, HasObservation=true,
                 NewFeedback=true, EventId=runId+"-"+reason,
                 Observation="관측 "+Clock(previous.Time-firstTime)+" · 최고 "+Math.Round(highestSpeed)+" km/h · 복기 "+turnCount+"회"+
@@ -268,6 +282,9 @@ namespace IntsLiveCoach
                 NextDrill=lastTurn == null ? "다음 주행은 진입 속도를 일정하게 맞춘 뒤 제동 해제를 관찰해 보세요." : lastTurn.Next,
                 Limits=distanceBased ? "게임의 스테이지 거리 기준입니다. 주행 유효성·공식 완주 결과는 게임에서 확인하세요." :
                     "스테이지 거리·공식 완주 신호가 없어 수신 시각과 직접 종료 기록을 사용합니다." };
+            if(comparison.Length>0) report.Observation=comparison+"\n"+report.Observation;
+            string repeatDrill=repeat.NextDrill();
+            if (repeatDrill.Length>0) report.NextDrill=repeatDrill;
             lastRun=RunSummary(reason); lastState=reason; lastReport=report.Copy(); current=report;
             lastReviewText=DescribeRun(title);
             holdReport=true; active=false;
@@ -281,7 +298,8 @@ namespace IntsLiveCoach
                 lastNativeStageSeconds=Optional(stageClock), observedNearStart=distanceBased?(bool?)(firstDistance<=5):null,
                 peakSpeedKph=highestSpeed, reviewedTurns=turnCount, steeringReversals=switches,
                 sectionBasis=distanceBased?"quarters-of-stage-distance":"30s-observation-windows",
-                sections=sections.Select(s=>s.Summary()).ToArray(), notes=notes.Select(n=>n.Summary()).ToArray() };
+                sections=sections.Select(s=>s.Summary()).ToArray(), notes=notes.Select(n=>n.Summary()).ToArray(),
+                repeatComparison=repeat.Snapshot() };
         }
         public object Snapshot()
         {
@@ -299,6 +317,8 @@ namespace IntsLiveCoach
             if (distanceBased) s.AppendLine("관측 범위 "+Metres(firstDistance)+" → "+Metres(lastDistance)+
                 (firstDistance>5 ? " · 도중 연결" : " · 출발 부근부터 관측"));
             else s.AppendLine("첫 주행 신호부터 PC 수신 시각으로 기록했습니다.");
+            string comparison=repeat.Review();
+            if (comparison.Length>0) { s.AppendLine(); s.AppendLine(comparison); }
             s.AppendLine();
             foreach (var item in sections.OrderBy(section=>section.Index))
             {

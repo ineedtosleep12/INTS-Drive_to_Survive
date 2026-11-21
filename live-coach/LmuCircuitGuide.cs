@@ -16,6 +16,8 @@ namespace IntsLiveCoach
         public readonly IReadOnlyList<string> Drills;
         public readonly string OfficialUrl;
         public readonly string VideoUrl;
+        public readonly IReadOnlyList<string> AvailableLayouts;
+        public bool IsLiveLayout { get { return Id == "live-layout"; } }
         private readonly string[] aliases;
 
         internal LmuCircuitCourse(string id, string name, string layout, int lengthMeters, string summary, string[] drills,
@@ -29,6 +31,7 @@ namespace IntsLiveCoach
             Drills = Array.AsReadOnly(drills);
             OfficialUrl = officialUrl;
             VideoUrl = videoUrl;
+            AvailableLayouts = Array.AsReadOnly(LmuCircuitGuide.LayoutNames(id, layout));
             aliases = otherAliases.Concat(new[] { id, name })
                 .Select(NormalizeWords).Distinct().OrderByDescending(alias => alias.Length).ToArray();
         }
@@ -36,7 +39,7 @@ namespace IntsLiveCoach
         // Use this only to suggest a guide. Telemetry comparisons use the actual session and reference metadata.
         public bool MatchesTrackFamily(string label)
         {
-            if (String.IsNullOrWhiteSpace(label)) return false;
+            if (IsLiveLayout || String.IsNullOrWhiteSpace(label)) return false;
             string words = NormalizeWords(label);
             foreach (string alias in aliases)
                 if (words.Contains(alias)) return true;
@@ -47,7 +50,7 @@ namespace IntsLiveCoach
         // Two layouts can share a length. An explicit conflicting label always wins.
         public bool MatchesPracticeLayout(string track, double lengthM)
         {
-            if (String.IsNullOrWhiteSpace(track) || !ReferenceLap.Finite(lengthM)) return false;
+            if (IsLiveLayout || String.IsNullOrWhiteSpace(track) || !ReferenceLap.Finite(lengthM)) return false;
             // The organizer's LMU Sebring 12H track entry lists 5820 m (event-2889
             // at simracing-gp.net). The official venue guide lists 6019 m. This
             // accepts either documented scale for the drill, without converting a lap.
@@ -77,11 +80,43 @@ namespace IntsLiveCoach
             return words.Replace(" le mans ultimate ", " ");
         }
 
-        public override string ToString() { return Name + " (" + Layout + ")"; }
+        public override string ToString() { return IsLiveLayout ? Name : Name + " (" + Layout + ")"; }
     }
 
     public static class LmuCircuitGuide
     {
+        // Representative layouts are listed first. Alternate names follow the February 2025,
+        // June 2025 and v1.3 LMU release notes. These labels help select a layout in the game.
+        // Timing line, scoring length and course identity for comparisons come from telemetry.
+        internal static string[] LayoutNames(string id, string primary)
+        {
+            switch (id)
+            {
+                case "live-layout": return new string[0];
+                case "imola": return new[] { primary, "WEC" };
+                case "fuji": return new[] { primary, "Classic" };
+                case "silverstone": return new[] { primary, "ELMS", "National", "International" };
+                case "sebring": return new[] { primary, "School" };
+                case "monza": return new[] { primary, "Curva Grande" };
+                case "spa": return new[] { primary, "ELMS", "Endurance" };
+                case "le-mans": return new[] { primary, "Mulsanne" };
+                case "portimao": return new[] { primary, "ELMS" };
+                case "bahrain": return new[] { primary, "Endurance", "Outer", "Paddock" };
+                case "cota": return new[] { primary, "National" };
+                case "lusail": return new[] { primary, "Short" };
+                case "paul-ricard": return new[] { primary, "1A", "1A-V2", "1A-V2 Short", "3A" };
+                default: return new[] { primary };
+            }
+        }
+
+        public static readonly LmuCircuitCourse LiveLayout = new LmuCircuitCourse(
+            "live-layout", "게임에서 선택한 레이아웃", "", 0,
+            "LMU에서 차량과 레이아웃을 고른 뒤 주행하세요. 게임이 보내는 코스 이름과 실제 거리를 기준으로 연습합니다.",
+            new[] {
+                "속도를 줄이는 코너 하나를 고르세요. 첫 유효 랩에서는 평소 제동 지점과 브레이크를 풀 때의 앞바퀴 방향을 기억하세요.",
+                "두 번째 랩에서는 같은 표지를 보고 제동 해제 속도만 바꿔 보세요. 코너를 나온 뒤 두 랩의 구간 시간과 조향을 비교하세요."
+            }, "https://guide.lemansultimate.com/hc/en-gb/articles/13210950566927-Configuring-Race-Weekend", "");
+
         // These are exercises and links to published onboard videos. No sampled inputs or racing lines
         // are derived from the videos. Raw lap ownership and compatibility belong to ReferenceLibrary.
         public static readonly IReadOnlyList<LmuCircuitCourse> Courses = Array.AsReadOnly(new[] {

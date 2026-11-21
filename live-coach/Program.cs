@@ -58,6 +58,8 @@ namespace IntsLiveCoach
         private bool disconnected = true, closing, hotkey;
         private string lastSpokenId = "";
         private const int HotkeyId = 0x494E;
+        private const int RunHotkeyId = 0x494F;
+        private bool runHotkey;
 
         public CoachWindow()
         {
@@ -78,29 +80,31 @@ namespace IntsLiveCoach
             compare.Controls.Add(referencePanel);
             tabs.TabPages.Add(practice); tabs.TabPages.Add(compare); tabs.TabPages.Add(BuildCircuitPage()); tabs.TabPages.Add(guide); Controls.Add(tabs); Controls.Add(selectors);
             PrepareTimeline();
-            var grid = new TableLayoutPanel { Dock = DockStyle.Top, Height = 650, Padding = new Padding(25, 16, 25, 0), ColumnCount = 1, RowCount = 10 };
+            var grid = new TableLayoutPanel { Dock = DockStyle.Top, Height = 650, Padding = new Padding(25, 16, 25, 0), ColumnCount = 1, RowCount = 11 };
             foreach (float height in new float[] { 43, 37, 82, 45, 54, 70, 95, 55, 46, 50 }) grid.RowStyles.Add(new RowStyle(SizeType.Absolute, height));
+            grid.RowStyles.Insert(3, runRow);
             practice.Controls.Add(grid);
             var title = new Label { Text = "INTS'  LIVE COACH", Dock = DockStyle.Fill, Font = new Font("Segoe UI", 23, FontStyle.Bold), ForeColor = Palette.Lime };
             grid.Controls.Add(title, 0, 0);
             connection.Text = "LMU 연결을 확인하는 중…"; connection.Dock = DockStyle.Fill; connection.ForeColor = Palette.Cyan; grid.Controls.Add(connection, 0, 1);
             setup.Dock = DockStyle.Fill; setup.ForeColor = Palette.Muted; grid.Controls.Add(setup, 0, 2); UpdateSetup();
-            stage.Dock = DockStyle.Fill; stage.Font = new Font(Font, FontStyle.Bold); stage.Text = "LMU 대기 → 기준 랩 기록 → 다음 랩 비교"; grid.Controls.Add(stage, 0, 3);
-            session.Dock = DockStyle.Fill; session.ForeColor = Palette.Muted; session.Text = "실제 LMU 데이터가 들어오면 차량·트랙·랩이 표시됩니다."; grid.Controls.Add(session, 0, 4);
-            feedback.Dock = DockStyle.Fill; feedback.Font = new Font("Malgun Gothic", 17, FontStyle.Bold); feedback.Text = "실제 주행에서 입력 하나를 바꿔 보세요."; grid.Controls.Add(feedback, 0, 5);
-            detail.Dock = DockStyle.Fill; detail.ForeColor = Palette.Muted; detail.Text = "내 직전 유효 랩과 같은 코스 위치에서 비교합니다.\n내 이전 랩은 이상적인 주행이나 최속 기준이 아닙니다."; grid.Controls.Add(detail, 0, 6);
-            action.Dock = DockStyle.Fill; action.ForeColor = Palette.Lime; grid.Controls.Add(action, 0, 7);
+            grid.Controls.Add(BuildRunControls(), 0, 3);
+            stage.Dock = DockStyle.Fill; stage.Font = new Font(Font, FontStyle.Bold); stage.Text = "LMU 대기 → 기준 랩 기록 → 다음 랩 비교"; grid.Controls.Add(stage, 0, 4);
+            session.Dock = DockStyle.Fill; session.ForeColor = Palette.Muted; session.Text = "실제 LMU 데이터가 들어오면 차량·트랙·랩이 표시됩니다."; grid.Controls.Add(session, 0, 5);
+            feedback.Dock = DockStyle.Fill; feedback.Font = new Font("Malgun Gothic", 17, FontStyle.Bold); feedback.Text = "실제 주행에서 입력 하나를 바꿔 보세요."; grid.Controls.Add(feedback, 0, 6);
+            detail.Dock = DockStyle.Fill; detail.ForeColor = Palette.Muted; detail.Text = "내 직전 유효 랩과 같은 코스 위치에서 비교합니다.\n내 이전 랩은 이상적인 주행이나 최속 기준이 아닙니다."; grid.Controls.Add(detail, 0, 7);
+            action.Dock = DockStyle.Fill; action.ForeColor = Palette.Lime; grid.Controls.Add(action, 0, 8);
             var buttons = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = false };
             StyleButton(show, "오버레이 보기", 155); show.Click += delegate { if (overlay.Visible) overlay.Hide(); else overlay.Show(); show.Text = overlay.Visible ? "오버레이 숨기기" : "오버레이 보기"; }; buttons.Controls.Add(show);
             StyleButton(export, "이번 주행 내보내기", 170); export.Enabled = false; export.Click += Export; buttons.Controls.Add(export);
-            passThrough.Text = "마우스 통과"; passThrough.AutoSize = true; passThrough.Margin = new Padding(12, 8, 0, 0); passThrough.CheckedChanged += delegate { overlay.SetPassThrough(passThrough.Checked); }; buttons.Controls.Add(passThrough); grid.Controls.Add(buttons, 0, 8);
+            passThrough.Text = "마우스 통과"; passThrough.AutoSize = true; passThrough.Margin = new Padding(12, 8, 0, 0); passThrough.CheckedChanged += delegate { overlay.SetPassThrough(passThrough.Checked); }; buttons.Controls.Add(passThrough); grid.Controls.Add(buttons, 0, 9);
             AddWrcSetupButton(buttons);
             var footer = new FlowLayoutPanel { Dock = DockStyle.Fill };
             voice.Text = "짧은 한국어 음성 코칭"; voice.AutoSize = true; voice.Enabled = false;
             try { foreach (InstalledVoice v in speech.GetInstalledVoices()) if (v.Enabled && v.VoiceInfo.Culture.TwoLetterISOLanguageName == "ko") { speech.SelectVoice(v.VoiceInfo.Name); voice.Enabled = true; break; } } catch { }
             if (!voice.Enabled) voice.Text = "한국어 음성 미설치 · 텍스트 코칭 사용";
             voice.CheckedChanged += delegate { if (!voice.Checked) speech.SpeakAsyncCancelAll(); }; footer.Controls.Add(voice);
-            footer.Controls.Add(new Label { AutoSize = true, ForeColor = Palette.Muted, Text = "Ctrl+Alt+O: 마우스 통과 전환 · 별도 서버 전송 없음" }); grid.Controls.Add(footer, 0, 9);
+            footer.Controls.Add(new Label { AutoSize = true, ForeColor = Palette.Muted, Text = "Ctrl+Alt+O 마우스 통과 전환 · 기록은 이 PC에 저장" }); grid.Controls.Add(footer, 0, 10);
             overlay.FormClosing += delegate(object sender, FormClosingEventArgs e) { if (!closing) { e.Cancel = true; overlay.Hide(); show.Text = "오버레이 보기"; } };
             lessons.Dock = DockStyle.Left; lessons.Width = 210; lessons.BackColor = Palette.Panel; lessons.ForeColor = Palette.Text; lessons.BorderStyle = BorderStyle.None; lessons.DisplayMember = "Title";
             lessonText.Dock = DockStyle.Fill; lessonText.ReadOnly = true; lessonText.BorderStyle = BorderStyle.None; lessonText.BackColor = Palette.Background; lessonText.ForeColor = Palette.Text; lessonText.Font = new Font("Malgun Gothic", 11); lessonText.DetectUrls = false;
@@ -112,12 +116,13 @@ namespace IntsLiveCoach
             referencePanel.LiveSettingsChanged += ConfigureReference;
             ConfigureReference(referencePanel.GetLiveSettings());
             LoadLessons();
-            Shown += delegate { hotkey = Native.RegisterHotKey(Handle, HotkeyId, 0x4003, (uint)Keys.O); if (!hotkey) passThrough.Text = "마우스 통과 (이 창에서 해제)"; poll = new System.Threading.Timer(Poll, null, 0, 50); };
+            Shown += delegate { hotkey = Native.RegisterHotKey(Handle, HotkeyId, 0x4003, (uint)Keys.O); if (!hotkey) passThrough.Text = "마우스 통과 (이 창에서 해제)"; ConfigureRunHotkey(); poll = new System.Threading.Timer(Poll, null, 0, 50); };
         }
 
         private void ChangeSource()
         {
             ClearCoursePractice();
+            stageRoute.Clear(); stageCar.Clear();
             lock (engineLock)
             {
                 generation++; reader.Dispose();
@@ -148,10 +153,10 @@ namespace IntsLiveCoach
             {
                 case 1: instruction = "ACC: 차량에 탑승하면 연결 · 기존 Broadcasting 설정으로 코스 길이를 확인합니다.\n공식 코스 길이 수신 후 유효 완주 랩의 제동 위치·주행선을 비교할 수 있습니다."; break;
                 case 2: instruction = "AMS2: Options → System → Shared Memory: Project CARS 2\n레이싱: 출발선을 통과한 뒤 완전한 유효 랩을 마치면 다음 랩과 비교합니다."; break;
-                case 3: instruction = "AC에서 차량에 탑승하면 연결됩니다.\n드리프트는 넓은 평지에서, 레이싱은 상단 연습을 바꿔 시작하세요."; break;
+                case 3: instruction = "AC에서 차량에 탑승하면 연결됩니다. 원돌이는 ‘원돌이 시작’, 여러 굽이는 ‘연속 드리프트’를 고르세요.\n같은 도로에서 이전 시도와 비교하려면 ‘드리프트 · 토우게 구간 반복’을 선택하세요."; break;
                 case 4: instruction = "EA WRC를 처음 연결할 때는 게임을 종료하고 아래 ‘EA WRC 데이터 전송 켜기’를 누르세요.\n그다음 게임을 실행하고 스테이지에서 주행하세요."; break;
                 case 5: instruction = "Assetto Corsa Rally: 다른 AC 계열 게임을 종료하고 스테이지에서 직접 운전\n랠리 입력·원리 코칭 시험 연결 · 공식 SDK/실제 주행 검증 전"; break;
-                default: instruction = "LMU: Gameplay → Enable Plugins 켜고 게임 재시작\n‘LMU 서킷 훈련’에서 코스와 코너 과제를 고른 뒤 게임에서 달리세요."; break;
+                default: instruction = "LMU의 Gameplay → Enable Plugins를 켜고 게임을 재시작하세요.\n‘LMU 서킷 훈련 → 게임에서 고른 레이아웃’으로 DLC를 포함한 현재 코스에서 내 랩을 비교하세요."; break;
             }
             setup.Text = instruction + "\n오버레이는 테두리 없는 창 / 창 모드에서 사용하세요.";
             if(referenceCoachingEnabled&&!string.Equals(selectedGame,referenceGame,StringComparison.OrdinalIgnoreCase))setup.Text+="\n불러온 "+referenceGame+" 기준은 이 게임에 적용하지 않습니다. 기본 원리 코칭을 사용합니다.";
@@ -335,10 +340,22 @@ namespace IntsLiveCoach
             using (var dialog = new SaveFileDialog { Filter = "주행 코칭 기록 (*.json)|*.json", FileName = "INTS-" + selectedGame + "-" + DateTime.Now.ToString("yyyyMMdd-HHmmss") + ".json" })
                 if (dialog.ShowDialog(this) == DialogResult.OK) try { string json; lock (engineLock) json = "{\"game\":\"" + selectedGame + "\",\"lapComparison\":" + engine.ExportJson() + ",\"principleCoaching\":" + principles.ExportJson() + ",\"referenceCoaching\":"+referenceCoach.ExportJson()+",\"skillPractice\":"+ExportExercises()+"}"; File.WriteAllText(dialog.FileName, json, new System.Text.UTF8Encoding(false)); } catch (Exception ex) { MessageBox.Show(this, "기록 저장 실패: " + ex.Message); }
         }
-        protected override void WndProc(ref Message m) { if (m.Msg == 0x0312 && m.WParam.ToInt32() == HotkeyId) passThrough.Checked = !passThrough.Checked; base.WndProc(ref m); }
+        private void ConfigureRunHotkey()
+        {
+            bool wanted = Visible && (activeExercise == StageRun || activeExercise == TougeRun);
+            if (wanted && !runHotkey) runHotkey = Native.RegisterHotKey(Handle, RunHotkeyId, 0x4003, (uint)Keys.R);
+            if (!wanted && runHotkey) { Native.UnregisterHotKey(Handle, RunHotkeyId); runHotkey = false; }
+        }
+        protected override void WndProc(ref Message m)
+        {
+            if (m.Msg == 0x0312 && m.WParam.ToInt32() == HotkeyId) passThrough.Checked = !passThrough.Checked;
+            if (m.Msg == 0x0312 && m.WParam.ToInt32() == RunHotkeyId) ToggleRunFromGame();
+            base.WndProc(ref m);
+        }
         protected override void OnFormClosed(FormClosedEventArgs e)
         {
             closing = true; if (poll != null) poll.Dispose(); if (hotkey) Native.UnregisterHotKey(Handle, HotkeyId);
+            if (runHotkey) Native.UnregisterHotKey(Handle, RunHotkeyId);
             // Do not dispose the map while a reader callback is copying it.
             for (int i = 0; i < 30 && Interlocked.CompareExchange(ref polling, 0, 0) != 0; i++) Thread.Sleep(10);
             if (Interlocked.CompareExchange(ref polling, 0, 0) == 0) reader.Dispose();

@@ -29,13 +29,15 @@ namespace IntsLiveCoach
             circuitChoice.DropDownStyle = ComboBoxStyle.DropDownList; circuitChoice.Width = 285;
             circuitChoice.AccessibleName = "연습할 LMU 서킷";
             foreach (var course in LmuCircuitGuide.Courses) circuitChoice.Items.Add(course);
+            circuitChoice.Items.Add(LmuCircuitGuide.LiveLayout);
             nav.Controls.Add(circuitChoice);
             CourseButton(nav, previousCircuit, "이전 서킷", 100, delegate { circuitChoice.SelectedIndex--; });
             CourseButton(nav, nextCircuit, "다음 서킷", 100, delegate { circuitChoice.SelectedIndex++; });
+            CourseButton(nav, new Button(), "게임에서 고른 레이아웃", 205, delegate { circuitChoice.SelectedItem = LmuCircuitGuide.LiveLayout; });
             AddCourseRow(grid, nav, 50);
             circuitTitle.Font = new Font(Font.FontFamily, 18, FontStyle.Bold); circuitTitle.ForeColor = Palette.Lime;
             AddCourseRow(grid, circuitTitle, 46);
-            AddCourseRow(grid, circuitSummary, 36);
+            AddCourseRow(grid, circuitSummary, 63);
             circuitDrills.BackColor = Palette.Panel; circuitDrills.ForeColor = Palette.Text;
             circuitDrills.ReadOnly = true; circuitDrills.BorderStyle = BorderStyle.None; circuitDrills.DetectUrls = false;
             circuitDrills.Font = new Font(Font.FontFamily, 11); circuitDrills.AccessibleName = "코너별 연습 과제";
@@ -85,9 +87,13 @@ namespace IntsLiveCoach
             var course = SelectedCircuit;
             if (course == null) return;
             int index = circuitChoice.SelectedIndex;
-            previousCircuit.Enabled = index > 0; nextCircuit.Enabled = index < circuitChoice.Items.Count - 1;
-            circuitTitle.Text = (index+1) + " / " + circuitChoice.Items.Count + "   " + course.Name + " · " + course.Layout;
+            previousCircuit.Enabled = index > 0; nextCircuit.Enabled = index < LmuCircuitGuide.Courses.Count - 1;
+            circuitTitle.Text = course.IsLiveLayout ? course.Name :
+                (index+1) + " / " + LmuCircuitGuide.Courses.Count + "   " + course.Name + " · " + course.Layout;
             circuitSummary.Text = course.Summary;
+            if (!course.IsLiveLayout)
+                circuitSummary.Text += "\n게임 레이아웃   " + string.Join("  ·  ", course.AvailableLayouts) +
+                    (course.AvailableLayouts.Count>1 ? "   |   다른 구성은 ‘게임에서 고른 레이아웃’으로 시작하세요." : "");
             var drills = new StringBuilder();
             for (int i=0; i<course.Drills.Count; i++) drills.AppendLine((i+1) + ". " + course.Drills[i]).AppendLine();
             circuitDrills.Text = drills.ToString().TrimEnd();
@@ -97,6 +103,7 @@ namespace IntsLiveCoach
             if (available) circuitFiles.SelectedIndex = 0;
             circuitLibrary.Text = available ? "같은 서킷의 실제 기록 · 파일에 표시된 차량과 레이아웃을 LMU에서 선택하세요."
                 : "이 서킷의 기준 파일이 없습니다. 내 랩으로 시작하거나 ‘핫랩과 비교’에서 파일을 여세요.";
+            if(course.IsLiveLayout) circuitLibrary.Text = "저장한 같은 차량·레이아웃의 랩은 ‘핫랩과 비교 → 기준 주행 열기’로 다시 사용할 수 있습니다.";
             circuitFiles.Visible = filePractice.Visible = available;
             RefreshCourseStatus();
         }
@@ -104,7 +111,10 @@ namespace IntsLiveCoach
         {
             bool here = SelectedCircuit != null && SelectedCircuit == courseRun.Course;
             saveBaseline.Enabled = here && courseRun.Baseline != null;
-            if (!here) courseRunStatus.Text = "LMU에서 위 레이아웃과 차량을 고르세요. 첫 유효 랩을 기준으로 고정하면 다음 랩부터 코너별로 비교합니다.";
+            if (!here && SelectedCircuit!=null && SelectedCircuit.IsLiveLayout) courseRunStatus.Text = "LMU에서 연습할 레이아웃과 차량을 선택한 뒤 ‘내 첫 랩으로 연습 시작’을 누르세요.";
+            else if (!here) courseRunStatus.Text = "LMU에서 위 레이아웃과 차량을 고르세요. 첫 유효 랩을 기준으로 고정하면 다음 랩부터 코너별로 비교합니다.";
+            else if (courseRun.Baseline == null && courseRun.Course.IsLiveLayout && !string.IsNullOrEmpty(courseRun.LiveTrack))
+                courseRunStatus.Text = "주행 조건 고정 · " + courseRun.LiveTrack + " / " + courseRun.LiveCar + " · " + courseRun.LiveLengthMeters.ToString("N0") + " m\n출발선부터 한 랩을 유효하게 완주하세요.";
             else if (courseRun.Baseline == null) courseRunStatus.Text = "연습 중 · 출발선을 지난 뒤 첫 유효 랩을 끝까지 달리세요.";
             else courseRunStatus.Text = "내 기준 랩 고정 · " + courseRun.Baseline.Car + " / " + courseRun.Baseline.Track +
                 "\n같은 조건에서 추가로 완주한 유효 랩 " + courseRun.ComparisonLaps + "회 · ‘핫랩과 비교’에서 두 랩의 입력을 확인하세요.";
@@ -169,15 +179,20 @@ namespace IntsLiveCoach
         {
             if (courseRun.Course == null) return false;
             var course = courseRun.Course;
+            if (course.IsLiveLayout && frame != null && string.IsNullOrEmpty(courseRun.LiveTrack) && courseRun.TryBindLiveLayout(frame))
+                RefreshCourseStatus();
             bool matches = frame != null && courseRun.Accepts(frame.Track,frame.TrackLength,frame.Car,frame.GameVersion);
             if (matches && courseRun.Baseline != null) return false;
             stage.Text = course + " · 내 랩 연습";
             feedback.Text = frame == null ? "LMU 주행 데이터 대기" : !matches ? "선택한 연습과 주행 조건을 확인하세요." :
                 frame.InPit || frame.IsReplay || !frame.OnTrack || !frame.IsValidLap ? "다음 유효 랩을 기다립니다." : "내 기준 랩을 기록하고 있습니다.";
             string target = courseRun.Baseline == null ? course.ToString() : courseRun.Baseline.Track + " / " + courseRun.Baseline.Car;
+            if(course.IsLiveLayout && !string.IsNullOrEmpty(courseRun.LiveTrack))
+                target = courseRun.LiveTrack + " / " + courseRun.LiveCar + " · " + courseRun.LiveLengthMeters.ToString("N0") + " m";
             detail.Text = matches ? "출발선부터 결승선까지 유효하게 완주하면 이 랩의 제동과 주행선을 고정합니다."
                 : "연습 대상   " + target + (frame == null ? "" : "\n현재 주행   " + frame.Track + " / " + frame.Car);
             action.Text = matches ? "이번 랩은 평소 페이스로 달리세요." : "LMU 연습 세션에서 같은 차량과 레이아웃을 선택하세요.";
+            if(course.IsLiveLayout && matches) action.Text = target + " · 이번 랩은 평소 페이스로 달리세요.";
             overlay.UpdateData(frame,null,feedback.Text,detail.Text,action.Text);
             return true;
         }

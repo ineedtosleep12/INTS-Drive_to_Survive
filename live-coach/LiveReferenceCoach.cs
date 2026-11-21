@@ -34,6 +34,7 @@ namespace IntsLiveCoach
         readonly List<LiveReferenceView> history=new List<LiveReferenceView>();
         Zone active,pendingZone;
         ReferenceSample previous;
+        double layoutMismatchStartM=double.NaN;
         int lap=-1,rejectedLap=-1;
         double ownPeak,activeDistanceAge,safeSince=double.NaN,pendingTime,feedbackUntil;
         LiveReferenceView feedback;
@@ -51,7 +52,7 @@ namespace IntsLiveCoach
             if(reference!=null)try {reference.Validate();BuildZones();}catch(FormatException ex){reference=null;hold="기준 파일 확인: "+ex.Message;}
         }
         public void Reset()
-        {context="";compatible=false;ownMetadata=null;previous=null;lap=rejectedLap=-1;visited.Clear();ClearCorner();hold="기준 주행과 실제 차량·코스를 확인하는 중";}
+        {context="";compatible=false;ownMetadata=null;previous=null;lap=rejectedLap=-1;layoutMismatchStartM=double.NaN;visited.Clear();ClearCorner();hold="기준 주행과 실제 차량·코스를 확인하는 중";}
         void ClearCorner()
         {active=pendingZone=null;activeSamples.Clear();feedback=null;safeSince=double.NaN;feedbackUntil=0;ownPeak=activeDistanceAge=0;activeObservedTiming=false;}
         static bool Finite(double n){return ReferenceLap.Finite(n);}
@@ -138,6 +139,8 @@ namespace IntsLiveCoach
                 TimeBasis=reference.TimeBasis,TrackLengthM=f.TrackLength,DistanceBasis=Basis(game),Complete=false,Validity="valid",
                 Samples=reference.Samples.Select(s=>s.Copy()).ToArray(),CoordinateFrame=Coordinates(game),LateralPositionBasis="unknown"
             };
+            probe.Conditions["sourceCarLabel"]=f.Car;
+            probe.Conditions["sourceTrackLabel"]=f.Track;
             var check=ReferenceComparison.Compare(reference,probe,allowVersion,allowMapping);
             compatible=check.Comparable;hold=check.Reason;warnings=check.Warnings;ownMetadata=probe;ownMetadata.Samples=new ReferenceSample[0];
             if(compatible&&zones.Count==0){compatible=false;hold="기준 파일에서 완전한 감속·회전 구간을 찾지 못했습니다.";}
@@ -175,16 +178,21 @@ namespace IntsLiveCoach
             if(key!=context){Reset();context=key;CheckContext(game,f);}
             if(!compatible)return View(null);
             if(lap!=f.Lap)
-            {ClearCorner();previous=null;visited.Clear();lap=f.Lap;}
+            {ClearCorner();previous=null;visited.Clear();lap=f.Lap;layoutMismatchStartM=double.NaN;}
             if(!f.OnTrack||f.InPit||f.IsReplay||!f.ValidLapKnown||!f.IsValidLap)
             {rejectedLap=f.Lap;ClearCorner();previous=null;return new LiveReferenceView {Status="피트·무효·리플레이 랩은 기준 코칭에서 제외합니다."};}
             if(rejectedLap==f.Lap)return new LiveReferenceView {Status="이번 랩 비교 제외 · 다음 유효 랩을 기다립니다."};
             var current=Sample(f);
-            if(ReferenceComparison.NeedsNativePositionCheck(reference) &&
-                !ReferenceComparison.NearbyWorldPositions(ReferenceComparison.SampleAtDistance(reference,current.DistanceM),current))
+            if(ReferenceComparison.NeedsNativePositionCheck(reference))
             {
-                ClearCorner();previous=null;
-                return new LiveReferenceView {Status="같은 코스 거리의 실제 위치를 확인하는 중 · 레이아웃과 계측선을 확인하세요."};
+                var expected=ReferenceComparison.SampleAtDistance(reference,current.DistanceM);
+                if(ReferenceComparison.IsGameSelectedLayout(reference) &&
+                    ReferenceComparison.SustainedLayoutMismatch(expected,current,ref layoutMismatchStartM))rejectedLap=f.Lap;
+                if(!ReferenceComparison.NearbyWorldPositions(expected,current))
+                {
+                    ClearCorner();previous=null;
+                    return new LiveReferenceView {Status="같은 코스 거리의 실제 위치를 확인하는 중 · 레이아웃과 계측선을 확인하세요."};
+                }
             }
             if(previous!=null)
             {

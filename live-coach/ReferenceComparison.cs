@@ -72,11 +72,21 @@ namespace IntsLiveCoach
             // Extent can qualify an explicitly requested exploration, never establish equivalence or synthesize a track length.
             return first<50&&last<=native.TrackLengthM+5&&native.TrackLengthM-last<=50&&last-first>=native.TrackLengthM*.98;
         }
-        internal static bool NeedsNativePositionCheck(ReferenceLap reference)
+        internal static bool HasRecordedCrossingExtent(ReferenceLap reference)
         {
             string extent;
             return reference!=null && (reference.DistanceBasis==ReferenceLap.LmuDistanceBasis || reference.DistanceBasis==ReferenceLap.LmuAnchoredDistanceBasis) &&
                 reference.Conditions.TryGetValue("sourceLapExtent",out extent) && extent=="recorded-crossing-to-crossing";
+        }
+        internal static bool IsGameSelectedLayout(ReferenceLap reference)
+        {
+            string selection;
+            return reference!=null && reference.DistanceBasis==ReferenceLap.LmuDistanceBasis &&
+                reference.Conditions.TryGetValue("sourceLayoutSelection",out selection) && selection=="game-reported";
+        }
+        internal static bool NeedsNativePositionCheck(ReferenceLap reference)
+        {
+            return HasRecordedCrossingExtent(reference) || IsGameSelectedLayout(reference);
         }
         internal static bool NearbyWorldPositions(ReferenceSample a,ReferenceSample b)
         {
@@ -84,6 +94,40 @@ namespace IntsLiveCoach
             // Coarse timing-line/layout check only. This tolerance is not a driving-line target.
             double dx=a.X-b.X,dz=a.Z-b.Z;
             return dx*dx+dz*dz<=35*35;
+        }
+        // A route can leave and rejoin between the seven coarse anchors. Wait for
+        // measured disagreement over distance so an isolated scoring packet, missing
+        // coordinate or late sample does not invalidate an otherwise useful lap.
+        internal static bool SustainedLayoutMismatch(ReferenceSample expected,ReferenceSample actual,ref double firstMismatchM)
+        {
+            if(expected==null || actual==null || !Finite(expected.X) || !Finite(expected.Z) ||
+                !Finite(actual.X) || !Finite(actual.Z) || NearbyWorldPositions(expected,actual))
+            {
+                firstMismatchM=double.NaN;
+                return false;
+            }
+            if(!Finite(firstMismatchM) || actual.DistanceM<firstMismatchM)firstMismatchM=actual.DistanceM;
+            return actual.DistanceM-firstMismatchM>=25;
+        }
+        internal static bool MatchesNativeWorldAnchors(ReferenceLap reference,ReferenceLap own,double from,double to)
+        {
+            if(reference.CoordinateFrame!=ReferenceLap.LmuCoordinateFrame || own.CoordinateFrame!=ReferenceLap.LmuCoordinateFrame)return false;
+            if(IsGameSelectedLayout(reference))
+            {
+                double firstMismatchM=double.NaN;
+                foreach(var sample in own.Samples)
+                {
+                    if(sample.DistanceM<from || sample.DistanceM>to)continue;
+                    if(SustainedLayoutMismatch(SampleAtDistance(reference,sample.DistanceM),sample,ref firstMismatchM))return false;
+                }
+            }
+            int nearby=0;
+            for(int i=0;i<7;i++)
+            {
+                double distance=from+(to-from)*i/6;
+                if(NearbyWorldPositions(SampleAtDistance(reference,distance),SampleAtDistance(own,distance)))nearby++;
+            }
+            return nearby>=5;
         }
         public static ComparisonResult Compare(ReferenceLap reference,ReferenceLap own,bool allowVersionMismatch=false,bool allowLmuMotecAlignment=false)
         {
@@ -93,6 +137,15 @@ namespace IntsLiveCoach
             if(!Known(reference.Game)||!Known(own.Game)||!Known(reference.Car)||!Known(own.Car)||!Known(reference.Track)||!Known(own.Track))
             {output.Reason="게임·차량·트랙 식별자가 미확인이라 기록을 정렬하지 않습니다.";return output;}
             if(!Same(reference.Game,own.Game)){output.Reason="다른 게임의 기록은 비교하지 않습니다.";return output;}
+            if(IsGameSelectedLayout(reference))
+            {
+                string nativeCar,nativeTrack;
+                if(!own.Conditions.TryGetValue("sourceCarLabel",out nativeCar))nativeCar=own.Car;
+                if(!own.Conditions.TryGetValue("sourceTrackLabel",out nativeTrack))nativeTrack=own.Track;
+                if(nativeCar!=reference.Car || nativeTrack!=reference.Track || own.GameVersion!=reference.GameVersion ||
+                   own.TrackLengthM!=reference.TrackLengthM || own.DistanceBasis!=ReferenceLap.LmuDistanceBasis)
+                {output.Reason="내 레이아웃 기준과 게임의 차량·코스·거리·빌드가 달라 비교를 기다립니다.";return output;}
+            }
             if(!Same(reference.Car,own.Car)){output.Reason="차량이 다릅니다. 검증된 같은 차량 식별자가 필요합니다.";return output;}
             if(!Same(reference.Track,own.Track)){output.Reason="트랙이 다릅니다. 같은 게임의 같은 코스가 필요합니다.";return output;}
             if(Known(reference.Layout)&&Known(own.Layout)&&!Same(reference.Layout,own.Layout)){output.Reason="트랙 레이아웃이 다릅니다.";return output;}
@@ -147,13 +200,7 @@ namespace IntsLiveCoach
                 double coverage=reference.Samples.Last().DistanceM-reference.Samples[0].DistanceM;
                 if(Finite(own.TrackLengthM) && Math.Abs(own.TrackLengthM-coverage)>Math.Max(60,own.TrackLengthM*.015))
                 {output.Reason="기준 랩이 달린 거리와 현재 레이아웃의 길이가 다릅니다.";return output;}
-                int nearby=0;
-                for(int i=0;i<7;i++)
-                {
-                    double distance=from+(to-from)*i/6;
-                    if(NearbyWorldPositions(SampleAtDistance(reference,distance),SampleAtDistance(own,distance)))nearby++;
-                }
-                if(reference.CoordinateFrame!=ReferenceLap.LmuCoordinateFrame || own.CoordinateFrame!=ReferenceLap.LmuCoordinateFrame || nearby<5)
+                if(!MatchesNativeWorldAnchors(reference,own,from,to))
                 {output.Reason="같은 코스 거리에서 두 차량의 실제 위치를 대응시키지 못했습니다. 레이아웃과 계측선 위치를 확인하세요.";return output;}
             }
             ReferenceSample r0=SampleAtDistance(reference,from),o0=SampleAtDistance(own,from);

@@ -13,7 +13,7 @@ namespace IntsLiveCoach
         public ReferenceLibraryEntry(string path,ReferenceLap lap)
         {
             Path=System.IO.Path.GetFullPath(path);Game=lap.Game;Car=lap.Car;Track=lap.Track;
-            IsCommunityRecording=ReferenceComparison.NeedsNativePositionCheck(lap);
+            IsCommunityRecording=ReferenceComparison.HasRecordedCrossingExtent(lap);
             string model;
             string car=lap.Conditions.TryGetValue("sourceCarModel",out model) && !string.IsNullOrWhiteSpace(model)
                 ? model+" / "+lap.Car : lap.Car;

@@ -18,6 +18,12 @@ namespace IntsLiveCoach
             checks = 0;
             var courses = LmuCircuitGuide.Courses;
             Check(courses.Count == 18, "all 18 official venues have a representative layout");
+            Check(courses.Sum(c => c.AvailableLayouts.Count) == 38 &&
+                courses.All(c => c.AvailableLayouts[0] == c.Layout && c.AvailableLayouts.Distinct().Count() == c.AvailableLayouts.Count),
+                "38 documented and locally installed layout packages, with one representative per venue");
+            Check(LmuCircuitGuide.LiveLayout.IsLiveLayout && !courses.Contains(LmuCircuitGuide.LiveLayout) &&
+                LmuCircuitGuide.LiveLayout.VideoUrl == "" && !LmuCircuitGuide.LiveLayout.MatchesTrackFamily("live-layout") &&
+                !LmuCircuitGuide.LiveLayout.MatchesPracticeLayout("live-layout",0), "free layout has no named corner, video or preset reference match");
             Check(String.Join(",", courses.Take(8).Select(c => c.Id)) ==
                 "imola,fuji,silverstone,sebring,monza,spa,le-mans,portimao", "practice and existing reference order");
             var byId = courses.ToDictionary(c => c.Id, StringComparer.Ordinal);

@@ -29,9 +29,17 @@ namespace IntsLiveCoach
         readonly Queue<Chain> recent = new Queue<Chain>();
         Chain active, last, best;
         int finished, direction, candidate, previousSlide, eventNumber;
+        int completedTransitions;
+        double completedSlideSeconds;
         double candidateSince, lastTime = double.NaN, trendAt, trendAngle, angleChange, linkedUntil;
         string context, phase;
         CoachPrincipleView view;
+
+        // The route exercise spans multiple independent chains, including long straights.
+        internal int TotalTransitions { get { return completedTransitions + (active == null ? 0 : active.Transitions); } }
+        internal double TotalSlideSeconds { get { return completedSlideSeconds + (active == null ? 0 : active.SlideSeconds); } }
+        internal int LongestTransitions { get { return Math.Max(best == null ? 0 : best.Transitions, active == null ? 0 : active.Transitions); } }
+        internal bool BetweenAttempts { get { return phase=="ready" || phase=="finished"; } }
 
         public Session Snapshot()
         {
@@ -67,7 +75,7 @@ namespace IntsLiveCoach
         public void Reset()
         {
             active = last = best = null;
-            recent.Clear(); finished = 0;
+            recent.Clear(); finished = completedTransitions = 0; completedSlideSeconds = 0;
             direction = candidate = previousSlide = 0;
             lastTime = double.NaN; context = phase = null; view = null;
         }
@@ -77,6 +85,7 @@ namespace IntsLiveCoach
             if (active != null)
             {
                 active.EndReason = reason; last = active; finished++;
+                completedTransitions += active.Transitions; completedSlideSeconds += active.SlideSeconds;
                 if (best == null || active.Transitions > best.Transitions ||
                     (active.Transitions == best.Transitions && active.SlideSeconds > best.SlideSeconds))
                     best = active;
@@ -93,7 +102,7 @@ namespace IntsLiveCoach
         {
             return "연결 " + c.Transitions + "회 · 옆미끄러짐 " + Number(c.SlideSeconds) + "초";
         }
-        static bool ReadAngle(TelemetryFrame f, out double angle)
+        internal static bool ReadAngle(TelemetryFrame f, out double angle)
         {
             angle = double.NaN;
             if (!Range(f.Time, 0, double.MaxValue) || !Range(f.SpeedKph, 0, 550) ||

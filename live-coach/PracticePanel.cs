@@ -23,11 +23,14 @@ namespace IntsLiveCoach
             "두 코너를 골라 첫 코너에서 만든 미끄러짐을 다음 코너까지 이어 보세요. 끊겨도 그대로 다음 코너에서 다시 시작하세요.");
         private static readonly Exercise StageRun = new Exercise("rally-stage", "스테이지 전체 주행",
             "출발 전에 오버레이를 켜고 평소처럼 달리세요. 달리는 동안 구간별 조작과 다음에 해볼 한 가지를 보여줍니다.");
+        private static readonly Exercise TougeRun = new Exercise("drift-touge", "드리프트 · 토우게 구간 반복",
+            "출발과 도착 표지, 달릴 방향을 정하세요. 출발 표지에서 기록을 시작하고 도착 표지에서 마치세요.");
         private static readonly Exercise[] DriftExercises = {
             DriftRun,
             new Exercise("drift-donut", "원돌이 시작", "콘 하나를 정하고 한쪽으로 원을 그리세요. 원이 일정해지면 가속을 조금씩 보태 보세요."),
             new Exercise("drift-balance", "한 방향 유지", "같은 기어와 같은 원에서 가속을 조절하면서 옆미끄러짐이 이어지는 시간을 보세요."),
-            new Exercise("drift-transition", "8자 방향 전환", "빈 평지에서 원 두 개를 정하세요. 첫 원에서 조향을 풀고 반대 원으로 넘어가 보세요.")
+            new Exercise("drift-transition", "8자 방향 전환", "빈 평지에서 원 두 개를 정하세요. 첫 원에서 조향을 풀고 반대 원으로 넘어가 보세요."),
+            TougeRun
         };
         private static readonly Exercise RallyExercise = new Exercise("rally-load", "기본 코너 · 감속부터 탈출까지",
             "출구가 보이는 느린 코너 하나를 고르세요. 직선에서 속도를 줄인 뒤 핸들을 돌리며 브레이크를 부드럽게 풀어 보세요.");
@@ -35,6 +38,11 @@ namespace IntsLiveCoach
         private readonly ComboBox exerciseSelector = new ComboBox();
         private readonly Button wrcSetup = new Button();
         private readonly Button endStage = new Button();
+        private readonly Button beginRun = new Button();
+        private readonly TextBox stageRoute = new TextBox(), stageCar = new TextBox();
+        private readonly Label routeLabel = new Label(), carLabel = new Label(), runKeyLabel = new Label();
+        private readonly RowStyle runRow = new RowStyle(SizeType.Absolute, 0);
+        private readonly TougeRunCoach tougeCoach = new TougeRunCoach();
         private readonly TabPage timelinePage = new TabPage("이번 주행 기록");
         private readonly RichTextBox timeline = new RichTextBox();
         private int eventRevision, displayedRevision = -1;
@@ -53,7 +61,7 @@ namespace IntsLiveCoach
         private Exercise activeExercise;
         private bool choosingExercises;
 
-        private bool IsRun { get { return activeExercise == DriftRun || activeExercise == StageRun; } }
+        private bool IsRun { get { return activeExercise == DriftRun || activeExercise == StageRun || activeExercise == TougeRun; } }
 
         private void PrepareTimeline()
         {
@@ -76,7 +84,8 @@ namespace IntsLiveCoach
                 nextTimelineRefresh = DateTime.UtcNow.AddSeconds(2);
                 events = activeExercise == DriftRun ? exerciseEvents.ToArray() : new ExerciseEvent[0];
                 displayedRevision = eventRevision;
-                review = activeExercise == DriftRun ? chainCoach.ReviewText() : stageCoach.ReviewText();
+                review = activeExercise == TougeRun ? tougeCoach.ReviewText() :
+                    activeExercise == DriftRun ? chainCoach.ReviewText() : stageCoach.ReviewText();
             }
             var lines = new StringBuilder();
             if (!String.IsNullOrEmpty(review)) { lines.AppendLine(review); lines.AppendLine(); }
@@ -108,10 +117,6 @@ namespace IntsLiveCoach
 
         private void AddWrcSetupButton(FlowLayoutPanel bar)
         {
-            StyleButton(endStage, "이번 스테이지 종료", 155);
-            endStage.Visible = endStage.Enabled = false;
-            endStage.Click += delegate { EndStageObservation(); };
-            bar.Controls.Add(endStage);
             StyleButton(wrcSetup, "EA WRC 데이터 전송 켜기", 200);
             wrcSetup.Visible = false;
             wrcSetup.Click += delegate {
@@ -121,6 +126,70 @@ namespace IntsLiveCoach
                     success ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
             };
             bar.Controls.Add(wrcSetup);
+        }
+
+        private Control BuildRunControls()
+        {
+            var bar = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = false, Margin = Padding.Empty };
+            routeLabel.Text = "스테이지·방향"; carLabel.Text = "차량";
+            foreach (var label in new[] { routeLabel, carLabel, runKeyLabel })
+            { label.AutoSize = true; label.Margin = new Padding(3, 7, 3, 0); }
+            stageRoute.Width = 143; stageCar.Width = 113;
+            stageRoute.MaxLength = stageCar.MaxLength = 80;
+            stageRoute.AccessibleName = "반복할 스테이지와 방향"; stageCar.AccessibleName = "반복할 차량";
+            StyleButton(beginRun, "이번 시도 시작", 117);
+            StyleButton(endStage, "이번 스테이지 종료", 142);
+            bar.Controls.AddRange(new Control[] {routeLabel, stageRoute, carLabel, stageCar, beginRun, endStage, runKeyLabel});
+            beginRun.Click += delegate { BeginRunObservation(); }; endStage.Click += delegate { EndStageObservation(); };
+            stageRoute.TextChanged += delegate { UpdateRunControls(); }; stageCar.TextChanged += delegate { UpdateRunControls(); };
+            return bar;
+        }
+
+        private void UpdateRunControls()
+        {
+            bool rally = activeExercise == StageRun, touge = activeExercise == TougeRun;
+            float height = rally || touge ? 44 : 0;
+            if (runRow.Height != height) runRow.Height = height;
+            runKeyLabel.Visible = beginRun.Visible = endStage.Visible = rally || touge;
+            runKeyLabel.Text = runHotkey ? "Ctrl+Alt+R" : "";
+            runKeyLabel.AccessibleName = "시도 시작 또는 종료 단축키";
+            routeLabel.Visible = stageRoute.Visible = carLabel.Visible = stageCar.Visible = rally;
+            lock (engineLock)
+            {
+                bool namedRun = rally && stageCoach.RepeatAttemptOpen;
+                bool pending = rally && stageCoach.RepeatWaitingForStart;
+                endStage.Text = touge ? "구간 종료" : pending ? "시작 대기 취소" : "이번 스테이지 종료";
+                stageRoute.ReadOnly = stageCar.ReadOnly = namedRun;
+                beginRun.Enabled = touge ? !tougeCoach.IsRecording : rally && !namedRun &&
+                    !String.IsNullOrWhiteSpace(stageRoute.Text) && !String.IsNullOrWhiteSpace(stageCar.Text);
+                endStage.Enabled = touge ? tougeCoach.CanFinishManually : rally && (pending || stageCoach.CanFinishManually);
+            }
+        }
+
+        private void BeginRunObservation()
+        {
+            lock (engineLock)
+            {
+                if (activeExercise == StageRun)
+                {
+                    if (stageCoach.RepeatAttemptOpen || !stageCoach.ArmRepeat(stageRoute.Text, stageCar.Text)) return;
+                }
+                else if (activeExercise == TougeRun && !tougeCoach.IsRecording) tougeCoach.Start();
+                else return;
+                generation++; eventRevision++;
+            }
+            if (!overlay.Visible) overlay.Show();
+            show.Text = "오버레이 숨기기"; ShowExerciseStart(); ShowTimeline();
+        }
+
+        private void ToggleRunFromGame()
+        {
+            if (activeExercise != StageRun && activeExercise != TougeRun) return;
+            bool started;
+            lock (engineLock) started = activeExercise == TougeRun ? tougeCoach.IsRecording : stageCoach.RepeatAttemptOpen;
+            if (started) EndStageObservation();
+            else if (beginRun.Enabled) BeginRunObservation();
+            else if (endStage.Enabled) EndStageObservation();
         }
 
         private void RefreshExercises()
@@ -151,6 +220,7 @@ namespace IntsLiveCoach
             driftCoach.Reset();
             rallyCoach.Reset();
             stageCoach.Reset();
+            tougeCoach.Reset();
             chainCoach.Reset();
             lastExerciseFrame = null;
         }
@@ -166,6 +236,14 @@ namespace IntsLiveCoach
                 if (report != null && (prior == null || prior.EventId != report.EventId))
                     SaveExerciseEvent(lastExerciseFrame, report);
             }
+            else if (activeExercise == TougeRun)
+            {
+                var prior = tougeCoach.LastReport;
+                tougeCoach.Interrupt();
+                var report = tougeCoach.LastReport;
+                if (report != null && (prior == null || prior.EventId != report.EventId))
+                    SaveExerciseEvent(lastExerciseFrame, report);
+            }
             else if (activeExercise == DriftRun)
             {
                 bool wasActive = chainCoach.Snapshot().Current != null;
@@ -176,22 +254,25 @@ namespace IntsLiveCoach
 
         private CoachPrincipleView RetainedReport()
         {
+            if (activeExercise == TougeRun) return tougeCoach.LastReport;
             if (activeExercise == DriftRun) return chainCoach.LastReport;
             return activeExercise == StageRun ? stageCoach.LastReport : null;
         }
 
         private void EndStageObservation()
         {
-            CoachPrincipleView recap;
+            CoachPrincipleView recap = null;
             lock (engineLock)
             {
-                if (activeExercise != StageRun || !stageCoach.CanFinishManually) return;
-                recap = stageCoach.FinishManually();
-                if (recap == null) return;
-                SaveExerciseEvent(lastExerciseFrame, recap);
+                if (activeExercise == StageRun && stageCoach.CancelPendingRepeat()) eventRevision++;
+                else if (activeExercise == TougeRun && tougeCoach.CanFinishManually) recap = tougeCoach.FinishManually();
+                else if (activeExercise == StageRun && stageCoach.CanFinishManually) recap = stageCoach.FinishManually();
+                else return;
+                if (recap != null) SaveExerciseEvent(lastExerciseFrame, recap);
                 generation++;
             }
-            ApplyExercise(null, recap);
+            if (recap != null) ApplyExercise(null, recap);
+            else { ShowExerciseStart(); ShowTimeline(); }
         }
 
         private void SelectExercise()
@@ -203,12 +284,12 @@ namespace IntsLiveCoach
             }
             lastPrinciple = null; feedbackUntil = DateTime.MinValue;
             lastSpokenId = ""; lastSpokenUtc = DateTime.MinValue; speech.SpeakAsyncCancelAll();
-            endStage.Visible = activeExercise == StageRun;
-            endStage.Enabled = false;
+            ConfigureRunHotkey();
+            UpdateRunControls();
             if (IsRun && !tabs.TabPages.Contains(timelinePage)) tabs.TabPages.Add(timelinePage);
             if (!IsRun && tabs.TabPages.Contains(timelinePage)) tabs.TabPages.Remove(timelinePage);
             if (activeExercise == null) { ClearLiveOverlay(); return; }
-            string guideLesson = activeExercise == DriftRun ? "drift-transition" : activeExercise == StageRun ? "rally-load" : activeExercise.LessonId;
+            string guideLesson = activeExercise == DriftRun || activeExercise == TougeRun ? "drift-transition" : activeExercise == StageRun ? "rally-load" : activeExercise.LessonId;
             foreach (PrincipleLesson lesson in lessons.Items)
                 if (lesson.Id == guideLesson) { lessons.SelectedItem = lesson; break; }
             ShowExerciseStart();
@@ -216,15 +297,24 @@ namespace IntsLiveCoach
 
         private void ShowExerciseStart()
         {
-            string venue = activeExercise == DriftRun ? "AC · Drift Playground 2021 또는 원하는 토우게 / 후륜 드리프트 차량"
+            UpdateRunControls();
+            string venue = activeExercise == TougeRun ? "AC · AE86 Drift로 Drift Playground 2021의 두 굽이를 잇거나 Trento-Bondone에서 한 구간을 선택하세요."
+                : activeExercise == DriftRun ? "AC · Drift Playground 2021 또는 원하는 토우게 / 후륜 드리프트 차량"
                 : selectedGame == "AC" ? "AC · Drift 코스 / Toyota AE86 Drift"
                 : selectedGame == "EA WRC" ? "EA WRC · 에스토니아 Vissi에서 연습할 수 있습니다."
                 : "AC Rally · 웨일스 Hafren South에서 연습할 수 있습니다.";
             stage.Text = "선택한 과제 · " + activeExercise.Name;
             feedback.Text = activeExercise.Name;
             action.Text = activeExercise.FirstAction;
-            detail.Text = venue + "\n차량에 탑승한 뒤 오버레이 보기를 누르세요.";
-            overlay.UpdateExercise(null, activeExercise.Name, "주행 데이터 대기", venue, activeExercise.FirstAction, "");
+            lock (engineLock)
+            {
+                if (activeExercise == StageRun) action.Text = stageCoach.RepeatAttemptOpen ?
+                    stageRoute.Text + " / " + stageCar.Text + " · 반복 기록 준비 완료. 출발하세요." :
+                    "두 시도를 비교하려면 스테이지·방향과 차량을 입력하고 출발 전에 ‘이번 시도 시작’을 누르세요.";
+                if (activeExercise == TougeRun && tougeCoach.IsRecording) action.Text = "기록 준비 완료. 출발 표지에서 달리기 시작하세요.";
+            }
+            detail.Text = venue + "\n차량에 탑승한 뒤 오버레이를 확인하세요.";
+            overlay.UpdateExercise(null, activeExercise.Name, "주행 데이터 대기", venue, action.Text, "");
         }
 
         // Called under engineLock. Keep only changes of phase or completed turns for export.
@@ -234,6 +324,7 @@ namespace IntsLiveCoach
             lastExerciseFrame = frame;
             CoachPrincipleView cue;
             if (activeExercise == StageRun) cue = stageCoach.Update(frame);
+            else if (activeExercise == TougeRun) cue = tougeCoach.Update(frame);
             else if (activeExercise == DriftRun) cue = chainCoach.Update(frame);
             else if (activeExercise == RallyExercise) cue = rallyCoach.Update(frame);
             else cue = driftCoach.Update(frame, activeExercise.LessonId);
@@ -253,8 +344,9 @@ namespace IntsLiveCoach
 
         private string ExportExercises()
         {
-            return new JavaScriptSerializer { MaxJsonLength = 32 * 1024 * 1024 }.Serialize(new {schemaVersion=2, events=exerciseEvents.ToArray(),
+            return new JavaScriptSerializer { MaxJsonLength = 32 * 1024 * 1024 }.Serialize(new {schemaVersion=3, events=exerciseEvents.ToArray(),
                 stage=activeExercise == StageRun ? stageCoach.Snapshot() : null,
+                touge=activeExercise == TougeRun ? tougeCoach.Snapshot() : null,
                 drift=activeExercise == DriftRun ? chainCoach.Snapshot() : null});
         }
 
@@ -267,7 +359,7 @@ namespace IntsLiveCoach
             if (detail.Text != notes) detail.Text = notes;
             action.Text = cue.NextDrill;
             overlay.UpdateExercise(frame, activeExercise.Name, cue.Title, cue.Observation, cue.NextDrill, cue.PossibleMechanism, IsRun ? cue.Status : null);
-            lock (engineLock) endStage.Enabled = activeExercise == StageRun && stageCoach.CanFinishManually;
+            UpdateRunControls();
             ShowTimeline();
             if (frame == null || !cue.HasObservation || frame.InPit || frame.IsReplay || !frame.OnTrack)
             {
