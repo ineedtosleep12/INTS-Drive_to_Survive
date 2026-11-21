@@ -10,12 +10,34 @@ namespace IntsLiveCoach
     {
         const double MinSlideSeconds = .35, TransitionWindow = 1.2;
         string context = "", phase = "";
-        double lastTime = double.NaN, beganAt, lastSlideAt, previousEnd, previousDuration, best;
+        double lastTime = double.NaN, beganAt, lastSlideAt, previousStart, previousEnd, previousDuration, best;
         double trendAt, trendAngle, previousTrend, turningSince = double.NaN;
         double peakForward, rotationSince = double.NaN;
         int direction, previousDirection, rotationDirection, sequence;
         bool linked;
         CoachPrincipleView lastView;
+        readonly DriftAttemptEvidence attemptEvidence=new DriftAttemptEvidence();
+        CoachPrincipleView lastDiagnosis;
+        double lastDiagnosisMarker;
+        DriftOutcome lastOutcome;
+        int turnSign;
+
+        public CoachPrincipleView LastReport
+        {
+            get {
+                if (lastDiagnosis==null) return null;
+                var copy=lastDiagnosis.Copy(); copy.NewFeedback=false; return copy;
+            }
+        }
+        public string ReviewText() { return DriftAttemptEvidence.Review(lastDiagnosis); }
+
+        // A lost signal ends this attempt. A completed finding belongs to its recorded car/track.
+        public void Interrupt()
+        {
+            var diagnosis=lastDiagnosis; var key=context;
+            Reset();
+            context=key; lastDiagnosis=diagnosis;
+        }
 
         public static bool Supports(string lessonId)
         {
@@ -33,6 +55,7 @@ namespace IntsLiveCoach
             peakForward = 0;
             linked = false;
             lastView = null;
+            turnSign=0; attemptEvidence.Reset(); lastDiagnosis=null; lastDiagnosisMarker=double.NaN;
         }
 
         static bool InRange(double v, double min, double max) { return v >= min && v <= max; }
@@ -54,8 +77,23 @@ namespace IntsLiveCoach
 
         CoachPrincipleView Wait(string lessonId, string reason)
         {
-            Reset();
+            Interrupt();
             return Show(lessonId, "wait", "차량 신호 대기", reason, "AC에서 차에 탑승하고 연습장에 진입하세요.", "", false);
+        }
+
+        CoachPrincipleView Diagnose(string lessonId, DriftOutcome outcome, double marker, int sign, string phaseName)
+        {
+            if (lastDiagnosis!=null && outcome==lastOutcome && marker==lastDiagnosisMarker)
+            {
+                phase=phaseName; lastView=LastReport; return lastView.Copy();
+            }
+            var finding=attemptEvidence.Describe(outcome,previousStart,previousEnd,sign);
+            if (finding==null) return null;
+            var cue=Show(lessonId,phaseName,finding.Title,finding.Observation,finding.NextDrill,finding.PossibleMechanism,true);
+            if (!cue.NewFeedback) { cue.NewFeedback=true; cue.EventId="drift-live-"+(++sequence); }
+            cue.Limits=finding.Limits; lastView=cue.Copy(); lastDiagnosis=cue.Copy();
+            lastDiagnosisMarker=marker; lastOutcome=outcome;
+            return cue;
         }
 
         static bool Motion(TelemetryFrame f, out double angle)
@@ -76,6 +114,7 @@ namespace IntsLiveCoach
             double duration = lastSlideAt - beganAt;
             if (duration >= MinSlideSeconds)
             {
+                previousStart = beganAt;
                 previousEnd = lastSlideAt;
                 previousDirection = direction;
                 previousDuration = duration;
@@ -87,6 +126,11 @@ namespace IntsLiveCoach
 
         public CoachPrincipleView Update(TelemetryFrame frame, string lessonId)
         {
+            if (frame!=null)
+            {
+                string key=string.Join("|",new[] {lessonId,frame.Car,frame.Track,frame.GameVersion,frame.TimeIsCaptureClock.ToString()});
+                if (context!=key) { Reset(); context=key; }
+            }
             if (!Supports(lessonId) || frame == null || !frame.OnTrack || frame.IsReplay || frame.InPit)
                 return Wait(lessonId, "현재 직접 주행 중인 차량 신호를 기다립니다.");
             double angle;
@@ -94,12 +138,10 @@ namespace IntsLiveCoach
                 !InRange(frame.Throttle, 0, 1) || !Motion(frame, out angle))
                 return Wait(lessonId, "속도·가속 페달·차체 속도·회전 신호를 확인 중입니다.");
 
-            string key = string.Join("|", new[] {lessonId, frame.Car, frame.Track, frame.GameVersion, frame.TimeIsCaptureClock.ToString()});
             double now = frame.Time;
-            if (context != key || now < lastTime || now - lastTime > .5)
+            if (now < lastTime || now - lastTime > .5)
             {
-                Reset();
-                context = key;
+                Interrupt();
             }
             if (now == lastTime && lastView != null)
             {
@@ -108,6 +150,7 @@ namespace IntsLiveCoach
                 return unchanged;
             }
             lastTime = now;
+            attemptEvidence.Observe(frame,angle);
 
             bool movingForward = frame.SpeedKph >= 12 && frame.LocalVelocityForward > 2;
             double threshold = direction == 0 ? 12 : 9; // Hysteresis around the lesson trigger.
@@ -128,9 +171,11 @@ namespace IntsLiveCoach
                 if (!movingForward) previousDirection = 0;
                 bool turning = movingForward && angle < 9 && Math.Abs(frame.YawRate) >= .18;
                 if (!turning) turningSince = double.NaN;
-                else if (double.IsNaN(turningSince)) turningSince = now;
+                else if (double.IsNaN(turningSince) || turnSign!=currentRotation) turningSince = now;
+                turnSign=currentRotation;
                 if (!double.IsNaN(rotationSince) && now - rotationSince >= .2)
-                    return Show(lessonId, "rotating", "전진이 줄고 차가 계속 돌아요",
+                    return Diagnose(lessonId,DriftOutcome.ContinuedRotation,previousEnd,rotationDirection,"rotating") ??
+                        Show(lessonId, "rotating", "전진이 줄고 차가 계속 돌아요",
                         "차체 앞쪽 속도 " + Display(frame.LocalVelocityForward * 3.6) + " km/h · 차체각 " + Display(angle) + "°",
                         "다음에는 각도가 커지기 시작할 때 가속을 더 보태지 말고 목표 원을 보세요.",
                         "회전이 계속 커지면 속도가 남아 있어도 차체 앞쪽으로 나아가는 속도는 줄어요.", true);
@@ -142,18 +187,28 @@ namespace IntsLiveCoach
                             record + " · 현재 " + Display(frame.SpeedKph) + " km/h",
                             "다음에는 일정한 속도로 원부터 잡고 작은 가속 변화 하나를 시험하세요.",
                             "아주 느릴 때는 작은 속도 변화에도 차체각의 측정값이 크게 달라져요.", true);
+                    if (lessonId=="drift-transition" && movingForward && now-previousEnd>TransitionWindow && previousDirection!=0)
+                    {
+                        var missed=Diagnose(lessonId,DriftOutcome.MissedTransfer,previousEnd,previousDirection,"missed");
+                        if (missed!=null) return missed;
+                    }
                     if (movingForward && angle <= 6)
+                    {
+                        var straightened=Diagnose(lessonId,DriftOutcome.Straightened,previousEnd,previousDirection,"straightened");
+                        if (straightened!=null) return straightened;
                         return Show(lessonId, "straightened", "차가 진행 방향으로 펴졌어요",
                             record + " · 차체각 " + Display(angle) + "°",
                             "다음에는 차가 펴지는 만큼 카운터를 부드럽게 되돌려 보세요.",
                             "접지가 돌아올 때 반대 조향을 오래 남기면 차가 반대쪽으로 튈 수 있어요.", true);
+                    }
                     return Show(lessonId, "ended", "옆미끄러짐 구간 종료",
                         record,
                         lessonId == "drift-transition" ? "다음 시도에서 첫 원을 작게 마무리하고 반대 원으로 이어 보세요." : "같은 진입에서 가속을 바꾸는 양만 조금 줄여 다시 시도하세요.",
                         "가속과 조향을 한꺼번에 바꾸면 어느 입력에 차가 반응했는지 구분하기 어려워요.", true);
                 }
-                if (turning && now - turningSince >= .7 && lessonId == "drift-donut")
-                    return Show(lessonId, "circle", "선회 중 · 차체각이 작아요",
+                if (turning && now - turningSince >= .7)
+                    return Diagnose(lessonId,DriftOutcome.GripTurn,turningSince,turnSign,"circle") ??
+                        Show(lessonId, "circle", "선회 중 · 차체각이 작아요",
                         "차체각 " + Display(angle) + "° · 가속 " + Math.Round(frame.Throttle * 100) + "%",
                         frame.Throttle < .75 ? "같은 원을 그리며 가속을 조금만 보태고 뒤의 움직임을 느껴 보세요." : "같은 기어로 원의 크기를 먼저 일정하게 만들어 보세요.",
                         "후륜 구동차는 뒷바퀴가 가속과 선회를 함께 담당해 가속 변화에 따라 뒤의 움직임이 달라져요.", true);

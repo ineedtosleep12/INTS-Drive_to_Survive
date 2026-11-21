@@ -163,12 +163,22 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("source_directory", type=Path)
     parser.add_argument("output_directory", type=Path)
-    parser.add_argument("--only", choices=manifest)
+    selection = parser.add_mutually_exclusive_group()
+    selection.add_argument("--only", choices=manifest)
+    selection.add_argument("--review-example", choices=[key for key, entry in manifest.items() if "reviewLap" in entry],
+                           help="Export the other recorded lap used in the two-lap review")
     args = parser.parse_args()
     licence_file = args.source_directory / "LICENSE"
     verify(licence_file, LICENCE_SHA256)
     licence = licence_file.read_text(encoding="utf-8").strip()
     args.output_directory.mkdir(parents=True, exist_ok=True)
+    if args.review_example:
+        source = manifest[args.review_example]
+        entry = {**source, **source["reviewLap"]}
+        destination = args.output_directory / f"{args.review_example}-comparison.json"
+        write_reference(destination, build(args.source_directory, entry, licence))
+        print(destination.name)
+        return
     for key, entry in manifest.items():
         if not args.only or key == args.only:
             model = "ginetta-lmp3" if entry["vehicle"] == GINETTA else "ferrari-296-evo"

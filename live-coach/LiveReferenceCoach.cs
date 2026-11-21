@@ -13,6 +13,9 @@ namespace IntsLiveCoach
         public string Status="기준 주행 코칭 대기",FeedbackId="",Heading="",Observation="",Principle="",NextAction="",Estimate="",CornerName="";
         public string LineObservation="";
         public double MeanAbsoluteLineOffsetM=double.NaN;
+        public double LineDivergenceM=double.NaN;
+        public double TimeResolutionSeconds=double.NaN;
+        public string EvidenceKind="";
         public ReferenceSample ReferenceAtPosition;
         public double StartDistanceM=double.NaN,EndDistanceM=double.NaN,TimeLossSeconds=double.NaN;
         public double EntryLossSeconds=double.NaN,MidLossSeconds=double.NaN,ExitLossSeconds=double.NaN;
@@ -20,7 +23,7 @@ namespace IntsLiveCoach
 
     // Runs under the host's telemetry lock. Source and aliases are frozen at Configure.
     // Zones describe recorded braking/lift complexes, not official named corners.
-    public sealed class LiveReferenceCoach
+    public sealed partial class LiveReferenceCoach
     {
         sealed class Zone
         {public int Id;public double Start,End,First,Second;public string Name;}
@@ -137,7 +140,8 @@ namespace IntsLiveCoach
                 Game=game,Car=alias?reference.Car:f.Car,Track=alias?reference.Track:f.Track,
                 Layout=alias&&!ReferenceLap.Unknown(sourceLayout)?sourceLayout:"unknown",GameVersion=f.GameVersion,
                 TimeBasis=reference.TimeBasis,TrackLengthM=f.TrackLength,DistanceBasis=Basis(game),Complete=false,Validity="valid",
-                Samples=reference.Samples.Select(s=>s.Copy()).ToArray(),CoordinateFrame=Coordinates(game),LateralPositionBasis="unknown"
+                Samples=reference.Samples.Select(s=>s.Copy()).ToArray(),CoordinateFrame=Coordinates(game),
+                LateralPositionBasis=Same(game,"LMU")?ReferenceLap.LmuLateralBasis:"unknown"
             };
             probe.Conditions["sourceCarLabel"]=f.Car;
             probe.Conditions["sourceTrackLabel"]=f.Track;
@@ -146,7 +150,7 @@ namespace IntsLiveCoach
             if(compatible&&zones.Count==0){compatible=false;hold="기준 파일에서 완전한 감속·회전 구간을 찾지 못했습니다.";}
         }
         static ReferenceSample Sample(TelemetryFrame f)
-        {return new ReferenceSample {Time=f.Time,DistanceM=f.LapDistance,SpeedKph=f.SpeedKph,Brake=f.Brake,Throttle=f.Throttle,Steering=f.Steering,X=Finite(f.X)&&Finite(f.Z)?f.X:double.NaN,Z=Finite(f.X)&&Finite(f.Z)?f.Z:double.NaN};}
+        {return new ReferenceSample {Time=f.Time,DistanceM=f.LapDistance,SpeedKph=f.SpeedKph,Brake=f.Brake,Throttle=f.Throttle,Steering=f.Steering,X=Finite(f.X)&&Finite(f.Z)?f.X:double.NaN,Z=Finite(f.X)&&Finite(f.Z)?f.Z:double.NaN,PathLateralM=f.PathLateralM};}
         bool Safe(TelemetryFrame f)
         {
             double relaxed=Math.Max(.06,Math.Min(.15,ownPeak*.4));
@@ -160,6 +164,7 @@ namespace IntsLiveCoach
             {
                 v.FeedbackId=feedback.FeedbackId;v.Heading=feedback.Heading;v.Observation=feedback.Observation;v.Principle=feedback.Principle;v.NextAction=feedback.NextAction;v.Estimate=feedback.Estimate;v.CornerName=feedback.CornerName;v.StartDistanceM=feedback.StartDistanceM;v.EndDistanceM=feedback.EndDistanceM;v.TimeLossSeconds=feedback.TimeLossSeconds;v.EntryLossSeconds=feedback.EntryLossSeconds;v.MidLossSeconds=feedback.MidLossSeconds;v.ExitLossSeconds=feedback.ExitLossSeconds;v.NewFeedback=isNew;
                 v.LineObservation=feedback.LineObservation;v.MeanAbsoluteLineOffsetM=feedback.MeanAbsoluteLineOffsetM;
+                v.LineDivergenceM=feedback.LineDivergenceM;v.EvidenceKind=feedback.EvidenceKind;v.TimeResolutionSeconds=feedback.TimeResolutionSeconds;
                 v.UsedObservedGraphicsTiming=feedback.UsedObservedGraphicsTiming;
             }
             else v.Estimate=compatible?"표본·주행 조건 차이가 있는 관측 비교입니다. 정확한 교정값이 아닙니다.":"";
@@ -239,7 +244,7 @@ namespace IntsLiveCoach
             previous=current;return View(f,newFeedback);
         }
         ReferenceLap OwnLap(IList<ReferenceSample> samples)
-        {return new ReferenceLap {Game=ownMetadata.Game,Car=ownMetadata.Car,Track=ownMetadata.Track,Layout=ownMetadata.Layout,GameVersion=ownMetadata.GameVersion,TrackLengthM=ownMetadata.TrackLengthM,DistanceBasis=ownMetadata.DistanceBasis,CoordinateFrame=ownMetadata.CoordinateFrame,Validity="valid",Complete=false,Samples=samples.Select(s=>s.Copy()).ToArray()};}
+        {return new ReferenceLap {Game=ownMetadata.Game,Car=ownMetadata.Car,Track=ownMetadata.Track,Layout=ownMetadata.Layout,GameVersion=ownMetadata.GameVersion,TrackLengthM=ownMetadata.TrackLengthM,DistanceBasis=ownMetadata.DistanceBasis,CoordinateFrame=ownMetadata.CoordinateFrame,LateralPositionBasis=ownMetadata.LateralPositionBasis,Conditions=ownMetadata.Conditions,Validity="valid",Complete=false,Samples=samples.Select(s=>s.Copy()).ToArray()};}
         static bool ContinuousCoordinates(ReferenceLap data,double start,double end)
         {
             ReferenceSample previous=null;
@@ -315,7 +320,17 @@ namespace IntsLiveCoach
             if(first==null||last==null)return null;
             own.Samples=(new[]{first}).Concat(own.Samples.Where(s=>s.DistanceM>zone.Start&&s.DistanceM<zone.End)).Concat(new[]{last}).ToArray();
             ComparisonResult result=ReferenceComparison.Compare(reference,own,allowVersion,allowMapping);if(!result.Comparable||result.Points.Length<5)return null;
-            if(!reference.HasTime)return AnalyzeSpatial(zone,own,result,first,last);
+            return Diagnose(zone,own,ownInput,result,first,last,Math.Min(reference.Samples.Last().DistanceM,ownInput.Samples.Last().DistanceM));
+        }
+        LiveReferenceView Diagnose(Zone zone,ReferenceLap own,ReferenceLap ownInput,ComparisonResult result,ReferenceSample first,ReferenceSample last,double inputEnd)
+        {
+            LiveReferenceView view=result.HasTimeComparison ? AnalyzeTimed(zone,own,ownInput,result,first,last,inputEnd) :
+                AnalyzeSpatial(zone,own,result,first,last);
+            if(view!=null) ExplainDrivingDifference(view,zone,ownInput,result);
+            return view;
+        }
+        LiveReferenceView AnalyzeTimed(Zone zone,ReferenceLap own,ReferenceLap ownInput,ComparisonResult result,ReferenceSample first,ReferenceSample last,double inputEnd)
+        {
             double entry=(TimeAt(own,zone.First)-TimeAt(own,zone.Start))-(TimeAt(reference,zone.First)-TimeAt(reference,zone.Start));
             double middle=(TimeAt(own,zone.Second)-TimeAt(own,zone.First))-(TimeAt(reference,zone.Second)-TimeAt(reference,zone.First));
             double exit=(TimeAt(own,zone.End)-TimeAt(own,zone.Second))-(TimeAt(reference,zone.End)-TimeAt(reference,zone.Second));
@@ -332,6 +347,7 @@ namespace IntsLiveCoach
                 Principle="기준과 조건이 다르면 같은 입력도 결과가 달라질 수 있어요.",NextAction="다음 랩도 같은 진입 속도로 재현해 보세요.",
                 Estimate="자동 감지한 감속·회전 복합 구간의 전반/중반/후반입니다. 공식 코너·에이펙스 판정이 아닙니다. 작은 시간 차이 판단 기준 약 "+Number(threshold)+"초. 조건을 통제하지 않은 관측입니다. "+string.Join(" ",warnings.Take(6).ToArray())};
             ObserveLine(v,result,own,zone);
+            v.TimeResolutionSeconds=threshold;
             v.UsedObservedGraphicsTiming=activeObservedTiming;
             if(activeObservedTiming)v.Estimate+=" ACC 위치·입력의 공통 원본 시각이 없어 동기 오차는 미확인입니다. PC에서 관측한 그래픽 갱신 간격·경과 시간에 판단 여유 0.5초를 추가했습니다. 이는 측정된 원본 지연이나 오차 상한이 아닙니다.";
             if(loss<=threshold)return v;
@@ -340,17 +356,16 @@ namespace IntsLiveCoach
             double speedDelta=first.SpeedKph-rEntry.SpeedKph;
             // Keep comparison timing at fixed course anchors. Later driver unwind/release
             // remains observable in this bounded tail, without moving the time-loss window.
-            double inputEnd=Math.Min(reference.Samples.Last().DistanceM,ownInput.Samples.Last().DistanceM);
             double brakeRelease=EndOfBrake(ownInput,zone.Start,inputEnd),refBrakeRelease=EndOfBrake(reference,zone.Start,inputEnd);
             double ownUnwind=Unwind(ownInput,zone.Start,inputEnd),refUnwind=Unwind(reference,zone.Start,inputEnd);
             double ownThrottle=ThrottleReturn(ownInput,zone.Start,inputEnd),refThrottle=ThrottleReturn(reference,zone.Start,inputEnd);
             double positionTolerance=Math.Max(15,Math.Max(rEntry.SpeedKph,first.SpeedKph)/3.6*sampleUncertainty);
             if(Math.Abs(speedDelta)>Math.Max(4,Math.Min(10,rEntry.SpeedKph*.04)))
-            {v.Observation+=" 진입 속도도 "+Number(Math.Abs(speedDelta))+" km/h "+(speedDelta>0?"높았음.":"낮았음.");v.Principle="진입 속도가 다르면 필요한 감속량과 회전 여유도 달라져요.";v.NextAction="제동·조향을 함께 바꾸지 말고 진입 속도부터 맞춰 보세요.";}
+            {v.EvidenceKind="entry-speed";v.Observation+=" 진입 속도도 "+Number(Math.Abs(speedDelta))+" km/h "+(speedDelta>0?"높았음.":"낮았음.");v.Principle="진입 속도가 다르면 필요한 감속량과 회전 여유도 달라져요.";v.NextAction="제동·조향을 함께 바꾸지 말고 진입 속도부터 맞춰 보세요.";}
             else if(Finite(brakeRelease)&&Finite(refBrakeRelease)&&brakeRelease-refBrakeRelease>positionTolerance&&middle+exit>threshold&&last.SpeedKph<rExit.SpeedKph-3)
-            {v.Observation+=" 제동 해제가 늦고 탈출 속도도 낮았음.";v.Principle="감속과 회전은 접지를 나눠 쓰고, 해제는 차 균형에도 영향을 줘요.";v.NextAction="진입 속도는 유지하고 브레이크 해제만 조금 앞당겨 부드럽게 시험하세요.";}
+            {v.EvidenceKind="release-exit-speed";v.Observation+=" 제동 해제가 늦고 탈출 속도도 낮았음.";v.Principle="감속과 회전은 접지를 나눠 쓰고, 해제는 차 균형에도 영향을 줘요.";v.NextAction="진입 속도는 유지하고 브레이크 해제만 조금 앞당겨 부드럽게 시험하세요.";}
             else if(exit>threshold&&Finite(ownUnwind)&&Finite(refUnwind)&&ownUnwind-refUnwind>positionTolerance&&Finite(ownThrottle)&&Finite(refThrottle)&&ownThrottle-refThrottle>positionTolerance)
-            {v.Observation+=" 내 조향을 푸는 시점과 가속 복귀가 뒤였음.";v.Principle="조향을 풀수록 가속에 쓸 접지 여유가 생길 수 있어요.";v.NextAction="진입 속도를 유지하고 출구를 보며 조향을 점진적으로 풀어 보세요.";v.Estimate+=" 조향은 각 랩 자체 최대 입력 대비 해제 시점만 비교했습니다. 휠 각도나 좌우 부호 비교가 아닙니다.";}
+            {v.EvidenceKind="unwind-throttle";v.Observation+=" 내 조향을 푸는 시점과 가속 복귀가 뒤였음.";v.Principle="조향을 풀수록 가속에 쓸 접지 여유가 생길 수 있어요.";v.NextAction="진입 속도를 유지하고 출구를 보며 조향을 점진적으로 풀어 보세요.";v.Estimate+=" 조향은 각 랩 자체 최대 입력 대비 해제 시점만 비교했습니다. 휠 각도나 좌우 부호 비교가 아닙니다.";}
             else
             {v.Observation+=" 입력 차이만으로 원인을 정하기는 어려움.";v.NextAction="다음 랩은 진입 속도를 유지하고 해제 구간을 다시 비교하세요.";}
             return v;
@@ -358,7 +373,7 @@ namespace IntsLiveCoach
         public string ExportJson()
         {
             return new JavaScriptSerializer().Serialize(new {schemaVersion=1,enabled=enabled,source=reference==null?null:reference.SourceUrl,game=reference==null?null:reference.Game,car=reference==null?null:reference.Car,track=reference==null?null:reference.Track,allowVersionMismatch=allowVersion,allowMotecAlignment=allowMapping,confirmedSourceCar=sourceCar,confirmedSourceTrack=sourceTrack,preparedZones=zones.Count,
-                events=history.Select(v=>new {id=v.FeedbackId,corner=v.CornerName,startM=v.StartDistanceM,endM=v.EndDistanceM,lossSeconds=JsonNumber(v.TimeLossSeconds),firstThirdLoss=JsonNumber(v.EntryLossSeconds),middleThirdLoss=JsonNumber(v.MidLossSeconds),lastThirdLoss=JsonNumber(v.ExitLossSeconds),observation=v.Observation,lineObservation=v.LineObservation,meanAbsoluteLineOffsetM=JsonNumber(v.MeanAbsoluteLineOffsetM),usedObservedGraphicsTiming=v.UsedObservedGraphicsTiming,principle=v.Principle,nextAction=v.NextAction,limits=v.Estimate}).ToArray()});
+                events=history.Select(v=>new {id=v.FeedbackId,corner=v.CornerName,startM=v.StartDistanceM,endM=v.EndDistanceM,lossSeconds=JsonNumber(v.TimeLossSeconds),firstThirdLoss=JsonNumber(v.EntryLossSeconds),middleThirdLoss=JsonNumber(v.MidLossSeconds),lastThirdLoss=JsonNumber(v.ExitLossSeconds),observation=v.Observation,lineObservation=v.LineObservation,meanAbsoluteLineOffsetM=JsonNumber(v.MeanAbsoluteLineOffsetM),lineDivergenceM=JsonNumber(v.LineDivergenceM),evidenceKind=v.EvidenceKind,usedObservedGraphicsTiming=v.UsedObservedGraphicsTiming,principle=v.Principle,nextAction=v.NextAction,limits=v.Estimate}).ToArray()});
         }
         static object JsonNumber(double value){return Finite(value)?(object)value:null;}
         static double Magnitude(ReferenceSample s){return Finite(s.Steering)?Math.Abs(s.Steering):Math.Abs(s.SteeringDegrees);}

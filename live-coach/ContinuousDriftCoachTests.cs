@@ -68,6 +68,26 @@ namespace IntsLiveCoach
             check(!new JavaScriptSerializer().Serialize(d.Coach.Snapshot()).Contains("NaN"), "export remains valid JSON");
             d.Coach.Reset();
             check(d.Coach.LastReport==null && d.Coach.Snapshot().Recent.Length==0, "explicit reset clears past reports");
+            d=new Drive();
+            d.Car.Car="WDC fixture"; d.Car.Track="driftplayground_2021";
+            d.Car.Throttle=.75; d.Send(23,.6,14); d.Send(1,0,4); d.Send(20,-.6,4);
+            var missed=d.Send(2,.03,24);
+            check(missed.Title.Contains("반대 회전이 짧게") && missed.Observation.Contains("0.2초") &&
+                missed.NextDrill.Contains("첫 원의 끝"),"short opposite rotation gets a measured transition drill");
+            check(d.Coach.Snapshot().Last.Diagnosis.EventId==missed.EventId &&
+                d.Coach.ReviewText().Contains(missed.PossibleMechanism),"chain retains and exports the diagnosis");
+            check(!d.Send(2,.03,1).NewFeedback,"the diagnosis is announced once");
+            d=new Drive(); d.Car.Throttle=.2; d.Send(22,.5,12); d.Car.Throttle=.9; d.Send(22,.5,5);
+            d.Send(40,.7,4); var spin=d.Send(86,1,8);
+            check(spin.Observation.Contains("각도가 6° 이상 커지기 전 가속") && d.Coach.LastReport.NextDrill.Contains("올리는 속도"),
+                "sustained post-slide rotation diagnosed on a full route");
+            d=new Drive(); d.Send(24,.5,13); d.Send(1,0,35);
+            check(d.Coach.LastReport.Observation.Contains("반대 옆미끄러짐") && !d.Coach.LastReport.Observation.Contains("가속"),
+                "missing pedals still support motion diagnosis without an invented pedal change");
+            d.Car.Car="different mod"; d.Car.LocalVelocityForward=double.NaN; d.Coach.Update(d.Car);
+            check(d.Coach.LastReport==null,"a different car cannot inherit the last report even when its motion signal is missing");
+            d=new Drive(); check(!d.Send(2,0,37).HasObservation && d.Coach.LastReport==null,
+                "a normal straight with no preceding slide is not a failed transition");
             return count;
         }
     }

@@ -117,7 +117,7 @@ namespace IntsLiveCoach
                 courseRunStatus.Text = "주행 조건 고정 · " + courseRun.LiveTrack + " / " + courseRun.LiveCar + " · " + courseRun.LiveLengthMeters.ToString("N0") + " m\n출발선부터 한 랩을 유효하게 완주하세요.";
             else if (courseRun.Baseline == null) courseRunStatus.Text = "연습 중 · 출발선을 지난 뒤 첫 유효 랩을 끝까지 달리세요.";
             else courseRunStatus.Text = "내 기준 랩 고정 · " + courseRun.Baseline.Car + " / " + courseRun.Baseline.Track +
-                "\n같은 조건에서 추가로 완주한 유효 랩 " + courseRun.ComparisonLaps + "회 · ‘핫랩과 비교’에서 두 랩의 입력을 확인하세요.";
+                "\n같은 조건에서 추가로 완주한 유효 랩 " + courseRun.ComparisonLaps + "회 · ‘실전 코치 → 완주 랩 코너 복기’에서 다음 과제를 확인하세요.";
         }
         void SetCourseReference(ReferenceLap lap)
         {

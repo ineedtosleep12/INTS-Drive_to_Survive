@@ -24,6 +24,7 @@ namespace IntsLiveCoach
     }
     public sealed class ComparisonResult
     {
+        internal ReferenceLap ReferenceSource, OwnSource;
         public bool Comparable,HasLineComparison,HasLateralComparison,HasTimeComparison;
         public string Reason="비교 데이터가 없습니다.";
         public string[] Warnings=new string[0];
@@ -231,6 +232,7 @@ namespace IntsLiveCoach
                 sections.Add(new ComparisonSection {Name=Metres(start)+"–"+Metres(end)+" m",StartDistanceM=start,EndDistanceM=end,
                     TimeLossSeconds=b.DeltaSeconds-a.DeltaSeconds,ExitSpeedDeltaKph=b.SpeedDeltaKph,MeanLineOffsetM=offsets.Length>0?offsets.Average():double.NaN});
             }
+            output.ReferenceSource=reference;output.OwnSource=own;
             output.Comparable=true;output.HasTimeComparison=hasTime;output.Reason=hasTime?"같은 코스 위치에서 기록된 입력·시간을 비교합니다. +시간은 내 주행이 더 오래 걸렸다는 뜻입니다.":"코스 위치별 입력·속도를 비교합니다. 표본 시각이 없어 시간 손실은 제공하지 않습니다.";
             output.Points=points.ToArray();output.Sections=sections.OrderByDescending(s=>s.TimeLossSeconds).ToArray();output.HasLineComparison=line;output.HasLateralComparison=lateral;
             output.BrakeZones=CompareBrakes(reference,own,from,to);output.Warnings=warnings.Distinct().ToArray();
@@ -240,7 +242,7 @@ namespace IntsLiveCoach
                 output.LapDeltaSeconds=points.Last().DeltaSeconds;
             return output;
         }
-        static bool HasLargeGap(ReferenceLap lap,double from,double to)
+        internal static bool HasLargeGap(ReferenceLap lap,double from,double to)
         {for(int i=1;i<lap.Samples.Length;i++)if(lap.Samples[i].DistanceM>=from&&lap.Samples[i-1].DistanceM<=to&&(lap.Samples[i].Time-lap.Samples[i-1].Time>1||lap.Samples[i].DistanceM-lap.Samples[i-1].DistanceM>100))return true;return false;}
         static void AddPoint(List<ComparisonPoint> output,ReferenceLap r,ReferenceLap o,double s,double rt,double ot,bool line,bool lateral)
         {var p=MakePoint(r,o,s,rt,ot,line,lateral);if(p!=null)output.Add(p);}

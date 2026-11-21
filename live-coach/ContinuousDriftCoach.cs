@@ -18,6 +18,8 @@ namespace IntsLiveCoach
             public double StartTime, LastSlideTime, SlideSeconds;
             public double DurationSeconds { get { return LastSlideTime - StartTime; } }
             public string EndReason = "", Clock, Track, Car;
+            internal CoachPrincipleView finding;
+            public CoachPrincipleView Diagnosis { get { return finding==null?null:finding.Copy(); } }
             internal Chain Copy() { return (Chain)MemberwiseClone(); }
         }
         public sealed class Session
@@ -34,6 +36,12 @@ namespace IntsLiveCoach
         double candidateSince, lastTime = double.NaN, trendAt, trendAngle, angleChange, linkedUntil;
         string context, phase;
         CoachPrincipleView view;
+        readonly DriftAttemptEvidence attemptEvidence=new DriftAttemptEvidence();
+        CoachPrincipleView latestDiagnosis;
+        string deliveredDiagnosisId;
+        double spinSince=double.NaN, gripAt=double.NaN;
+        int spinSign;
+        internal CoachPrincipleView LatestDiagnosis { get { return latestDiagnosis; } }
 
         // The route exercise spans multiple independent chains, including long straights.
         internal int TotalTransitions { get { return completedTransitions + (active == null ? 0 : active.Transitions); } }
@@ -58,12 +66,17 @@ namespace IntsLiveCoach
             }
             if (best != null && best != last)
                 lines.Add("최고 · " + Progress(best) + " · " + best.EndReason);
+            if (latestDiagnosis!=null) lines.Add(DriftAttemptEvidence.Review(latestDiagnosis));
             return string.Join(Environment.NewLine, lines.ToArray());
         }
         public CoachPrincipleView LastReport
         {
             get
             {
+                if (latestDiagnosis!=null && (last==null || last.finding==latestDiagnosis))
+                {
+                    var recap=latestDiagnosis.Copy(); recap.NewFeedback=false; return recap;
+                }
                 if (last == null) return null;
                 return new CoachPrincipleView { LessonId = Lesson, Status = Progress(last), Title = "최근 연결 주행",
                     Observation = Progress(last) + " · " + last.EndReason, HasObservation = true,
@@ -78,6 +91,7 @@ namespace IntsLiveCoach
             recent.Clear(); finished = completedTransitions = 0; completedSlideSeconds = 0;
             direction = candidate = previousSlide = 0;
             lastTime = double.NaN; context = phase = null; view = null;
+            attemptEvidence.Reset(); latestDiagnosis=null; deliveredDiagnosisId=null; spinSince=gripAt=double.NaN;
         }
 
         void Finish(string reason)
@@ -125,48 +139,96 @@ namespace IntsLiveCoach
             return view.Copy();
         }
 
+        void Remember(CoachPrincipleView diagnosis, Chain owner)
+        {
+            if (diagnosis==null) return;
+            diagnosis.LessonId=Lesson; diagnosis.HasObservation=true;
+            diagnosis.Status=owner==null?"슬라이드 진입 연습":Progress(owner);
+            diagnosis.EventId="chain-diagnosis-"+(++eventNumber);
+            latestDiagnosis=diagnosis; if (owner!=null) owner.finding=diagnosis;
+        }
+        CoachPrincipleView Present(string id, CoachPrincipleView diagnosis)
+        {
+            bool fresh=diagnosis.EventId!=deliveredDiagnosisId;
+            deliveredDiagnosisId=diagnosis.EventId;
+            phase=id; view=diagnosis.Copy(); view.NewFeedback=fresh;
+            return view.Copy();
+        }
+
         public CoachPrincipleView Update(TelemetryFrame f)
         {
+            if (f!=null)
+            {
+                string key=string.Join("|",new[] {f.Car,f.Track,f.GameVersion,f.TimeIsCaptureClock.ToString()});
+                if (context!=key) { Reset(); context=key; }
+            }
             double angle;
             if (f == null || !f.OnTrack || f.InPit || f.IsReplay || !ReadAngle(f, out angle))
             {
                 Finish("주행 신호 중단");
+                attemptEvidence.Reset(); spinSince=gripAt=double.NaN;
                 lastTime = double.NaN;
                 return Cue("wait", "직접 주행 신호 대기", "", "차량에 탑승해 앞쪽으로 주행하세요.", "", false);
             }
-            string key = string.Join("|", new[] {f.Car, f.Track, f.GameVersion, f.TimeIsCaptureClock.ToString()});
-            if (context != key) { Reset(); context = key; }
             if (f.Time == lastTime && view != null)
             {
                 var duplicate = view.Copy(); duplicate.NewFeedback = false; return duplicate;
             }
             double dt = f.Time - lastTime;
-            if (dt < 0 || dt > .5) { Finish("시계 또는 수신 연속성 중단"); dt = 0; }
+            if (dt < 0 || dt > .5) { Finish("시계 또는 수신 연속성 중단"); attemptEvidence.Reset(); spinSince=gripAt=double.NaN; dt = 0; }
             lastTime = f.Time;
+            attemptEvidence.Observe(f,angle);
+            int sign = Math.Sign(f.YawRate);
             if (f.SpeedKph < 12 || f.LocalVelocityForward <= 2)
             {
+                bool turnsOn=f.SpeedKph>=12 && angle>=60 && Math.Abs(f.YawRate)>=.55;
+                if (!turnsOn || sign!=spinSign) spinSince=double.NaN;
+                if (turnsOn && active!=null && direction==sign && f.Time-active.LastSlideTime<=.3)
+                { spinSince=f.Time; spinSign=sign; }
                 Finish(f.SpeedKph < 12 ? "속도 감소" : "차체 앞방향 속도 감소");
+                if (!double.IsNaN(spinSince) && f.Time-spinSince>=.2 && last!=null)
+                {
+                    Remember(attemptEvidence.Describe(DriftOutcome.ContinuedRotation,last.StartTime,last.LastSlideTime,spinSign),last);
+                    spinSince=double.NaN;
+                }
                 return Between();
             }
 
-            int sign = Math.Sign(f.YawRate);
+            spinSince=double.NaN;
             double threshold = active != null && direction == sign ? 9 : 12;
             bool sliding = angle >= threshold && Math.Abs(f.YawRate) >= .18;
             // Confirm a candidate that began within the transition allowance even
             // if its confirmation falls slightly beyond that window.
             if (active != null && f.Time - active.LastSlideTime > MaxTransitionGap &&
                 !(sliding && candidate == sign && candidateSince - active.LastSlideTime <= MaxTransitionGap))
+            {
+                Remember(attemptEvidence.Describe(DriftOutcome.MissedTransfer,active.StartTime,active.LastSlideTime,direction),active);
                 Finish("전환 시간 안에 옆미끄러짐이 이어지지 않음");
+            }
 
             if (!sliding)
             {
                 previousSlide = candidate = 0;
-                if (active == null) return Between();
+                if (active == null)
+                {
+                    if ((last==null || f.Time-last.LastSlideTime>4) && attemptEvidence.IsGripTurn)
+                    {
+                        if (double.IsNaN(gripAt))
+                        {
+                            Remember(attemptEvidence.Describe(DriftOutcome.GripTurn,0,0,sign),null);
+                            gripAt=f.Time;
+                        }
+                        return Present("grip",latestDiagnosis);
+                    }
+                    gripAt=double.NaN;
+                    return Between();
+                }
                 return Cue("bridge", "전환 중 · 옆미끄러짐 신호 감소", "전환 대기 " + Number(f.Time-active.LastSlideTime) + "초 · 차체각 " + Number(angle) + "°",
                     "다음 출구를 보고 차가 펴지는 만큼 기존 카운터를 풀어 보세요.",
                     "두 회전 사이에서 차체각이 작아지는 동안 앞바퀴도 새 진행 방향으로 돌아갑니다.", true);
             }
 
+            gripAt=double.NaN;
             if (active == null || direction != sign)
             {
                 if (candidate != sign) { candidate = sign; candidateSince = f.Time; }
@@ -212,6 +274,8 @@ namespace IntsLiveCoach
 
         CoachPrincipleView Between()
         {
+            if (last!=null && last.finding!=null && lastTime>=last.LastSlideTime && lastTime-last.LastSlideTime<4)
+                return Present("diagnosis",last.finding);
             if (last == null)
                 return Cue("ready", "연속 주행 시작", "첫 옆미끄러짐을 기다립니다.", "게임 연습장에서 두 굽이가 이어지는 구간을 정하고 첫 굽이로 진입하세요.", "", false);
             return Cue("finished", "연결 주행 종료 · 다음 시도 준비", Progress(last) + " · " + last.EndReason,

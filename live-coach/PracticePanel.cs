@@ -82,10 +82,12 @@ namespace IntsLiveCoach
             {
                 if (displayedRevision == eventRevision && DateTime.UtcNow < nextTimelineRefresh) return;
                 nextTimelineRefresh = DateTime.UtcNow.AddSeconds(2);
-                events = activeExercise == DriftRun ? exerciseEvents.ToArray() : new ExerciseEvent[0];
+                events = activeExercise == DriftRun || activeExercise == RallyExercise ? exerciseEvents.ToArray() : new ExerciseEvent[0];
                 displayedRevision = eventRevision;
                 review = activeExercise == TougeRun ? tougeCoach.ReviewText() :
-                    activeExercise == DriftRun ? chainCoach.ReviewText() : stageCoach.ReviewText();
+                    activeExercise == DriftRun ? chainCoach.ReviewText() :
+                    activeExercise == StageRun ? stageCoach.ReviewText() :
+                    selectedGame == "AC" ? driftCoach.ReviewText() : "";
             }
             var lines = new StringBuilder();
             if (!String.IsNullOrEmpty(review)) { lines.AppendLine(review); lines.AppendLine(); }
@@ -93,9 +95,10 @@ namespace IntsLiveCoach
             for (int i = events.Length - 1; i >= 0; --i)
             {
                 var e = events[i];
-                if (e.lesson != DriftRun.LessonId) continue;
+                if (activeExercise == null || e.lesson != activeExercise.LessonId) continue;
                 lines.AppendLine(e.phase + (String.IsNullOrEmpty(e.progress) ? "" : "   ·   " + e.progress));
                 lines.AppendLine(e.observed);
+                if (!String.IsNullOrEmpty(e.principle)) lines.AppendLine(e.principle);
                 lines.AppendLine(e.next);
                 lines.AppendLine();
             }
@@ -227,7 +230,7 @@ namespace IntsLiveCoach
 
         private void InterruptExerciseObservation()
         {
-            driftCoach.Reset(); rallyCoach.Reset();
+            driftCoach.Interrupt(); rallyCoach.Reset();
             if (activeExercise == StageRun)
             {
                 var prior = stageCoach.LastReport;
@@ -256,6 +259,7 @@ namespace IntsLiveCoach
         {
             if (activeExercise == TougeRun) return tougeCoach.LastReport;
             if (activeExercise == DriftRun) return chainCoach.LastReport;
+            if (activeExercise != null && selectedGame == "AC") return driftCoach.LastReport;
             return activeExercise == StageRun ? stageCoach.LastReport : null;
         }
 
@@ -286,8 +290,9 @@ namespace IntsLiveCoach
             lastSpokenId = ""; lastSpokenUtc = DateTime.MinValue; speech.SpeakAsyncCancelAll();
             ConfigureRunHotkey();
             UpdateRunControls();
-            if (IsRun && !tabs.TabPages.Contains(timelinePage)) tabs.TabPages.Add(timelinePage);
-            if (!IsRun && tabs.TabPages.Contains(timelinePage)) tabs.TabPages.Remove(timelinePage);
+            if (activeExercise != null && !tabs.TabPages.Contains(timelinePage)) tabs.TabPages.Add(timelinePage);
+            if (activeExercise == null && tabs.TabPages.Contains(timelinePage)) tabs.TabPages.Remove(timelinePage);
+            displayedRevision = -1;
             if (activeExercise == null) { ClearLiveOverlay(); return; }
             string guideLesson = activeExercise == DriftRun || activeExercise == TougeRun ? "drift-transition" : activeExercise == StageRun ? "rally-load" : activeExercise.LessonId;
             foreach (PrincipleLesson lesson in lessons.Items)
@@ -298,9 +303,9 @@ namespace IntsLiveCoach
         private void ShowExerciseStart()
         {
             UpdateRunControls();
-            string venue = activeExercise == TougeRun ? "AC · AE86 Drift로 Drift Playground 2021의 두 굽이를 잇거나 Trento-Bondone에서 한 구간을 선택하세요."
-                : activeExercise == DriftRun ? "AC · Drift Playground 2021 또는 원하는 토우게 / 후륜 드리프트 차량"
-                : selectedGame == "AC" ? "AC · Drift 코스 / Toyota AE86 Drift"
+            string venue = activeExercise == TougeRun ? "AC · Drift Playground 2021 또는 Trento-Bondone에서 같은 차로 출발·도착 표지를 정하세요."
+                : activeExercise == DriftRun ? "AC · Drift Playground 2021에서 굽이 두 개를 고르거나 Skidpad 0.5에서 8자를 그려 보세요."
+                : selectedGame == "AC" ? "AC · Skidpad 0.5 또는 Drift Playground 2021의 빈 공간 / AE86 Drift나 사용하는 후륜 모드 차량"
                 : selectedGame == "EA WRC" ? "EA WRC · 에스토니아 Vissi에서 연습할 수 있습니다."
                 : "AC Rally · 웨일스 Hafren South에서 연습할 수 있습니다.";
             stage.Text = "선택한 과제 · " + activeExercise.Name;

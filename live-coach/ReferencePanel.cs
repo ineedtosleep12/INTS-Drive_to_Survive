@@ -24,6 +24,11 @@ namespace IntsLiveCoach
         readonly string libraryDirectory=Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"references");
         readonly TrackBar cursor = new TrackBar();
         readonly ReferencePlot plot = new ReferencePlot();
+        readonly CornerReviewPanel cornerReview = new CornerReviewPanel();
+        readonly TabPage reviewPage = new TabPage("코너별 운전 복기");
+        readonly TabControl reviewTabs = new TabControl();
+        readonly Label exampleStatus = new Label();
+        Form exampleWindow;
         readonly DataGridView sections = Grid(), brakes = Grid();
         readonly Button save = new Button(), useOwn = new Button(), alignReplay = new Button();
         public event Action<ReferenceLiveSettings> LiveSettingsChanged;
@@ -55,8 +60,15 @@ namespace IntsLiveCoach
             zoom.Text="선택 지점 ±200 m 확대";zoom.AutoSize=true;zoom.CheckedChanged+=delegate {RefreshCursor();};options.Controls.Add(zoom);rows.Controls.Add(options,0,3);
             alignment.Text="MoTeC ↔ 실시간 거리·횡위치 탐색 정렬 (실제 게임 데이터 대조 전)";alignment.AutoSize=true;alignment.CheckedChanged+=delegate {if(!changingReference){Rebuild();SettingsChanged();}};options.Controls.Add(alignment);
             liveContext.Dock=DockStyle.Fill;liveContext.ForeColor=Palette.Cyan;rows.Controls.Add(liveContext,0,4);UpdateLiveContextLabel();
-            var tabs=new TabControl {Dock=DockStyle.Fill};rows.Controls.Add(tabs,0,5);
+            var tabs=reviewTabs; tabs.Dock=DockStyle.Fill;rows.Controls.Add(tabs,0,5);
             var traces=new TabPage("입력 · 시간 · 주행선") {BackColor=Palette.Background};plot.Dock=DockStyle.Fill;traces.Controls.Add(plot);tabs.TabPages.Add(traces);
+            reviewPage.BackColor=Palette.Background; reviewPage.Controls.Add(cornerReview); tabs.TabPages.Add(reviewPage);
+            var exampleRow=new FlowLayoutPanel {Dock=DockStyle.Bottom,Height=38,WrapContents=false};
+            AddButton(exampleRow,"공개 실측 두 랩으로 체험",OpenCornerExample);
+            exampleStatus.AutoSize=true; exampleStatus.ForeColor=Palette.Muted;
+            exampleStatus.Margin=new Padding(6,7,0,0); exampleRow.Controls.Add(exampleStatus);
+            reviewPage.Controls.Add(exampleRow);
+            cornerReview.TraceRequested+=delegate(double metres) {zoom.Checked=true;Seek(metres);tabs.SelectedTab=traces;};
             var losses=new TabPage("어디서 잃었나") {BackColor=Palette.Background};sections.Dock=DockStyle.Fill;losses.Controls.Add(sections);tabs.TabPages.Add(losses);
             var braking=new TabPage("제동 시작 · 해제") {BackColor=Palette.Background};brakes.Dock=DockStyle.Fill;braking.Controls.Add(brakes);tabs.TabPages.Add(braking);
             var sources=new TabPage("출처 · 조건 · 읽는 법") {BackColor=Palette.Background};evidence.Dock=DockStyle.Fill;evidence.ReadOnly=true;evidence.BackColor=Palette.Background;evidence.ForeColor=Palette.Text;evidence.BorderStyle=BorderStyle.None;evidence.DetectUrls=false;sources.Controls.Add(evidence);tabs.TabPages.Add(sources);
@@ -134,6 +146,42 @@ namespace IntsLiveCoach
             ReloadLibrary(false);UpdateLiveContextLabel();SettingsChanged();return true;
         }
         public void EnableLiveReference() { useLive.Checked=true; }
+        public void ShowCornerReview() { reviewTabs.SelectedTab=reviewPage; }
+        void OpenCornerExample()
+        {
+            if (exampleWindow!=null && !exampleWindow.IsDisposed) { exampleWindow.Activate(); return; }
+            try
+            {
+                var baseline=Read(Path.Combine(libraryDirectory,"imola-ginetta-lmp3.reference.json"));
+                var companion=Read(Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"review-example","imola-comparison.json"));
+                var result=ReferenceComparison.Compare(baseline,companion);
+                if (!result.Comparable) { exampleStatus.Text=result.Reason; return; }
+                var window=new Form {Text="공개 실측 예시 · 이몰라 / 지네타 LMP3",Size=new Size(820,560),
+                    MinimumSize=new Size(640,450),StartPosition=FormStartPosition.CenterParent,BackColor=Palette.Background,
+                    ForeColor=Palette.Text,Font=Font};
+                var sampleTabs=new TabControl {Dock=DockStyle.Fill};
+                var debrief=new TabPage("두 랩의 코너 복기") {BackColor=Palette.Background};
+                var graph=new TabPage("두 랩의 입력·주행선") {BackColor=Palette.Background};
+                var reader=new CornerReviewPanel();
+                var chart=new ReferencePlot {Dock=DockStyle.Fill,Reference=baseline,Own=companion,Result=result,Zoom=true,
+                    TraceLegend="청록은 기준 랩, 노랑은 같은 운전자의 비교 랩입니다. 그래프를 눌러 위치를 선택하세요."};
+                chart.SeekRequested+=delegate(double metres){chart.CursorM=metres;chart.Invalidate();};
+                reader.TraceRequested+=delegate(double metres){chart.CursorM=metres;sampleTabs.SelectedTab=graph;chart.Invalidate();};
+                reader.SetLaps(baseline,companion,result);debrief.Controls.Add(reader);graph.Controls.Add(chart);
+                sampleTabs.TabPages.Add(debrief);sampleTabs.TabPages.Add(graph);
+                var source=new Label {Dock=DockStyle.Top,Height=48,Padding=new Padding(10,4,0,0),
+                    Text="Vasco Duarte · 이몰라 · 지네타 LMP3 · 같은 세션의 두 랩\n청록은 기준 " +
+                    LapTime(baseline,false) + ", 노랑은 비교 " + LapTime(companion,false) + "입니다."};
+                window.Controls.Add(sampleTabs);window.Controls.Add(source);
+                exampleWindow=window;window.FormClosed+=delegate {exampleWindow=null;};window.Show(FindForm());
+                exampleStatus.Text="";
+            }
+            catch (Exception ex)
+            {
+                if (!(ex is IOException) && !(ex is UnauthorizedAccessException) && !(ex is FormatException)) throw;
+                exampleStatus.Text="예시 파일을 확인하세요. 배포 ZIP을 폴더째 압축 해제하면 열 수 있습니다.";
+            }
+        }
         public void SetCourseBaseline(ReferenceLap captured)
         {
             changingReference=true;changingLibrary=true;
@@ -230,15 +278,16 @@ namespace IntsLiveCoach
         }
         static string N(double n,string unit) {return ReferenceLap.Finite(n)?n.ToString("0.0",CultureInfo.InvariantCulture)+unit:"미측정";}
         static string Signed(double n,string unit) {return ReferenceLap.Finite(n)?n.ToString("+0.00;-0.00;0.00",CultureInfo.InvariantCulture)+unit:"미측정";}
-        static string LapTime(ReferenceLap lap)
+        static string LapTime(ReferenceLap lap,bool describeCoverage=true)
         {double t=lap.Samples.Last().Time-lap.Samples[0].Time;string recorded;double scored;
-            if(lap.Conditions.TryGetValue("recordedLapTimeSeconds",out recorded)&&double.TryParse(recorded,NumberStyles.Float,CultureInfo.InvariantCulture,out scored)&&scored>0)
-                return ((int)scored/60)+":"+(scored%60).ToString("00.000",CultureInfo.InvariantCulture)+(lap.Complete?"":" · 경계 표본 제외");
+            if((lap.Conditions.TryGetValue("recordedLapTimeSeconds",out recorded)||lap.Conditions.TryGetValue("sourceLapTimeSeconds",out recorded))&&double.TryParse(recorded,NumberStyles.Float,CultureInfo.InvariantCulture,out scored)&&scored>0)
+                return ((int)scored/60)+":"+(scored%60).ToString("00.000",CultureInfo.InvariantCulture)+(describeCoverage&&!lap.Complete?" · 경계 표본 제외":"");
             if(!lap.HasTime)return "표본 시각 미제공";
             return (lap.Complete?"완주 ":"부분 ")+((int)t/60)+":"+(t%60).ToString("00.000",CultureInfo.InvariantCulture);}
         void Rebuild()
         {
             comparison=ReferenceComparison.Compare(reference,own,versions.Checked,alignment.Checked);save.Enabled=own!=null;useOwn.Enabled=own!=null&&own.Complete&&own.Validity=="valid"&&!ReferenceLibrary.ViewOnly(own);sections.Rows.Clear();brakes.Rows.Clear();
+            cornerReview.SetLaps(reference,own,comparison);
             alignReplay.Enabled=AccReplayAlignment.CanTry(reference,own);
             if(reference!=null&&reference.DistanceBasis==ReferenceLap.LmuAnchoredDistanceBasis)alignment.Text="기록 거리 탐색 정렬 (게임 계측 지점 사이를 속도로 보간)";
             else alignment.Text=reference!=null&&reference.DistanceBasis==AccReplayAlignment.SourceDistanceBasis?"ACCReplay ↔ 실시간 코스 거리 탐색 정렬 (대응 미검증)":"MoTeC ↔ 실시간 거리·횡위치 탐색 정렬 (실제 게임 데이터 대조 전)";
@@ -288,6 +337,7 @@ namespace IntsLiveCoach
         public ComparisonResult Result;
         public double CursorM;
         public bool Zoom;
+        public string TraceLegend;
         public event Action<double> SeekRequested;
         double from,to;
         RectangleF chart;
@@ -305,7 +355,7 @@ namespace IntsLiveCoach
             from=Zoom?Math.Max(0,Math.Min(length-400,CursorM-200)):0;to=Zoom?Math.Min(length,from+400):length;
             float mapWidth=Width>=650?220:0;float left=48,right=Width-mapWidth-12;float top=30,h=Math.Max(20,(Height-58)/5f);
             chart=new RectangleF(left,top,right-left,h*5);
-            TextAt(g,ReferenceLibrary.ViewOnly(Reference)?"청록: 실제 입력 기록 · 가로축: 속도 적분 거리 (코스 위치 아님)":"청록: 기준     노랑: 내 기록     클릭: 위치 선택",new RectangleF(8,4,Width-10,25),Palette.Muted);
+            TextAt(g,TraceLegend ?? (ReferenceLibrary.ViewOnly(Reference)?"청록: 실제 입력 기록 · 가로축: 속도 적분 거리 (코스 위치 아님)":"청록: 기준     노랑: 내 기록     클릭: 위치 선택"),new RectangleF(8,4,Width-10,25),Palette.Muted);
             double speedMax=Math.Max(100,Math.Ceiling(Reference.Samples.Concat(compare?Own.Samples:new ReferenceSample[0]).Where(s=>Ok(s.SpeedKph)).Select(s=>s.SpeedKph).DefaultIfEmpty(300).Max()/20)*20);
             DrawTrace(g,new RectangleF(left,top,right-left,h-7),"km/h",0,speedMax,s=>s.SpeedKph,compare);
             DrawTrace(g,new RectangleF(left,top+h,right-left,h-7),"제동",0,1,s=>s.Brake,compare);

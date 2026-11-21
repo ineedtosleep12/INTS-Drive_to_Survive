@@ -30,13 +30,16 @@ namespace IntsLiveCoach
             public string Car, Track, Version, Clock, State;
             public double Elapsed, Slide, Distance;
             public bool HasDistance;
+            public CoachPrincipleView Diagnosis;
+            public double DiagnosisAt;
             public Point[] Marks;
             public double Percent { get { return Elapsed > 0 ? 100 * Slide / Elapsed : 0; } }
             public object Export()
             {
                 return new { attempt=Number, car=Car, track=Track, gameVersion=Version, clock=Clock, state=State,
                     observedSeconds=Elapsed, slideSeconds=Slide, transitions=Links, longestChainTransitions=Longest,
-                    pathMetres=HasDistance ? (double?)Distance : null };
+                    pathMetres=HasDistance ? (double?)Distance : null, diagnosis=Diagnosis,
+                    diagnosisAtSeconds=Diagnosis==null?(double?)null:DiagnosisAt };
             }
         }
 
@@ -134,6 +137,9 @@ namespace IntsLiveCoach
             var cue=chains.Update(f);
             run.Elapsed=f.Time-firstTime; run.Links=chains.TotalTransitions;
             run.Slide=chains.TotalSlideSeconds; run.Longest=chains.LongestTransitions; run.HasDistance=havePath;
+            var finding=chains.LatestDiagnosis;
+            if (finding!=null && (run.Diagnosis==null || run.Diagnosis.EventId!=finding.EventId))
+            { run.Diagnosis=finding.Copy(); run.DiagnosisAt=run.Elapsed; }
             if (havePath && (path.Count==0 || run.Distance-path[path.Count-1].Distance>=stride))
             {
                 path.Add(CurrentPoint());
@@ -216,11 +222,15 @@ namespace IntsLiveCoach
             }
             report=new CoachPrincipleView {LessonId=Lesson, Status=complete?"구간 기록 완료":"구간 기록 중단",
                 Title=complete?(endedSignal?"마지막 수신 지점에서 구간 마감":"직접 선택한 구간 기록 완료"):"구간 관측 종료", Observation=run==null?reason:Stats(run),
-                NextDrill=complete?"같은 표지에서 다시 출발해 이전 카운터를 푸는 시점 하나만 바꿔 보세요.":"같은 출발 표지에서 기록을 다시 시작하세요.",
-                PossibleMechanism="차가 펴질 때 기존 카운터를 풀면 반대 방향의 회전을 받을 조향 여유가 생깁니다.",
+                NextDrill=complete?"같은 두 표지에서 한 번 더 달려 연결 횟수와 옆미끄러짐 비율을 비교해 보세요.":"같은 출발 표지에서 기록을 다시 시작하세요.",
                 Limits=complete?"출발·도착 표지는 직접 정합니다. 구간 일치는 같은 차량·코스와 실측 경로의 근사 비교입니다.":reason,
                 HasObservation=run!=null, NewFeedback=true, EventId="touge-end-"+number};
             if (complete) report.Status=comparison.Split('\n')[0];
+            if (complete && run.Diagnosis!=null)
+            {
+                report.Observation=N(run.DiagnosisAt)+"초 지점 · "+run.Diagnosis.Observation;
+                report.NextDrill=run.Diagnosis.NextDrill; report.PossibleMechanism=run.Diagnosis.PossibleMechanism;
+            }
             return report.Copy();
         }
         public string ReviewText()
@@ -232,7 +242,13 @@ namespace IntsLiveCoach
             text.Append(run.Clock=="capture"?"수신 시계 ":"게임 시계 ").Append(N(run.Elapsed)).Append("초");
             if (run.HasDistance) text.Append(" · 관측한 평면 주행거리 ").Append(N(run.Distance)).Append("m");
             if (comparison.Length>0) text.AppendLine().Append(comparison);
-            if (report!=null) text.AppendLine().Append(report.Limits).AppendLine().Append(report.NextDrill);
+            if (run.Diagnosis!=null)
+                text.AppendLine().Append(N(run.DiagnosisAt)).Append("초 지점 · ").Append(DriftAttemptEvidence.Review(run.Diagnosis));
+            if (report!=null)
+            {
+                text.AppendLine().Append(report.Limits);
+                if (run.Diagnosis==null || report.NextDrill!=run.Diagnosis.NextDrill) text.AppendLine().Append(report.NextDrill);
+            }
             return text.ToString();
         }
         public object Snapshot()

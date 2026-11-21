@@ -21,6 +21,7 @@
     "lap": 11,
     "duration": 101.462524,
     "samples": 507,
+    "reviewLap": { "lap": 8, "duration": 102.778198, "samples": 513 },
     "distanceChannel": "raw_lap_distance_m",
     "metadataSha256": "81b7cabc99713df63be3a9634810f1c999c6f73d530f44705400a0145c8582fd",
     "parquetSha256": "b91f69b3a3dd322607239d542c06b8dcbdeda1559c5770dc5651cc9bd41c3f47"

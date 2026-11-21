@@ -49,6 +49,7 @@ namespace IntsLiveCoach
         private string selectedGame = "LMU";
         private readonly CheckBox voice = new CheckBox(), passThrough = new CheckBox();
         private readonly Button show = new Button(), export = new Button();
+        private readonly Button reviewLastLap = new Button();
         private readonly SpeechSynthesizer speech = new SpeechSynthesizer();
         private readonly object engineLock = new object();
         private System.Threading.Timer poll;
@@ -99,6 +100,9 @@ namespace IntsLiveCoach
             StyleButton(export, "이번 주행 내보내기", 170); export.Enabled = false; export.Click += Export; buttons.Controls.Add(export);
             passThrough.Text = "마우스 통과"; passThrough.AutoSize = true; passThrough.Margin = new Padding(12, 8, 0, 0); passThrough.CheckedChanged += delegate { overlay.SetPassThrough(passThrough.Checked); }; buttons.Controls.Add(passThrough); grid.Controls.Add(buttons, 0, 9);
             AddWrcSetupButton(buttons);
+            StyleButton(reviewLastLap, "완주 랩 코너 복기", 158);
+            reviewLastLap.Click += delegate { tabs.SelectedTab=compare; referencePanel.ShowCornerReview(); };
+            buttons.Controls.Add(reviewLastLap);
             var footer = new FlowLayoutPanel { Dock = DockStyle.Fill };
             voice.Text = "짧은 한국어 음성 코칭"; voice.AutoSize = true; voice.Enabled = false;
             try { foreach (InstalledVoice v in speech.GetInstalledVoices()) if (v.Enabled && v.VoiceInfo.Culture.TwoLetterISOLanguageName == "ko") { speech.SelectVoice(v.VoiceInfo.Name); voice.Enabled = true; break; } } catch { }
@@ -148,12 +152,13 @@ namespace IntsLiveCoach
         }
         private void UpdateSetup()
         {
+            reviewLastLap.Visible = selectedDiscipline == DrivingDiscipline.Race;
             string instruction;
             switch (game.SelectedIndex)
             {
                 case 1: instruction = "ACC: 차량에 탑승하면 연결 · 기존 Broadcasting 설정으로 코스 길이를 확인합니다.\n공식 코스 길이 수신 후 유효 완주 랩의 제동 위치·주행선을 비교할 수 있습니다."; break;
                 case 2: instruction = "AMS2: Options → System → Shared Memory: Project CARS 2\n레이싱: 출발선을 통과한 뒤 완전한 유효 랩을 마치면 다음 랩과 비교합니다."; break;
-                case 3: instruction = "AC에서 차량에 탑승하면 연결됩니다. 원돌이는 ‘원돌이 시작’, 여러 굽이는 ‘연속 드리프트’를 고르세요.\n같은 도로에서 이전 시도와 비교하려면 ‘드리프트 · 토우게 구간 반복’을 선택하세요."; break;
+                case 3: instruction = "Skidpad 0.5에서는 ‘원돌이 시작’, Drift Playground 2021에서는 ‘연속 드리프트’를 골라 보세요.\n후륜 모드 차량도 차체 회전·속도·페달이 수신되면 같은 과제를 연습할 수 있습니다."; break;
                 case 4: instruction = "EA WRC를 처음 연결할 때는 게임을 종료하고 아래 ‘EA WRC 데이터 전송 켜기’를 누르세요.\n그다음 게임을 실행하고 스테이지에서 주행하세요."; break;
                 case 5: instruction = "Assetto Corsa Rally: 다른 AC 계열 게임을 종료하고 스테이지에서 직접 운전\n랠리 입력·원리 코칭 시험 연결 · 공식 SDK/실제 주행 검증 전"; break;
                 default: instruction = "LMU의 Gameplay → Enable Plugins를 켜고 게임을 재시작하세요.\n‘LMU 서킷 훈련 → 게임에서 고른 레이아웃’으로 DLC를 포함한 현재 코스에서 내 랩을 비교하세요."; break;

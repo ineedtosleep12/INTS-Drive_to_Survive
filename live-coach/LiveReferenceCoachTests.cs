@@ -165,7 +165,83 @@ namespace IntsLiveCoach
             Check(events.All(e=>Math.Abs(e.TimeLossSeconds)<.00001&&Math.Abs(e.MeanAbsoluteLineOffsetM-2)<.00001),"ACC native distance plus coordinates reaches corner timing and line observation");
             Check(coach.ExportJson().Contains("usedObservedGraphicsTiming\":true"),"coaching export preserves observed-graphics timing qualification");
             events=DriveAccNative(Coach(line),line,false);Check(events.Count==0,"unchanged native graphics packet cannot activate ACC coaching despite changing fixture time");
+            CheckCornerReview();
             return checks;
+        }
+        static LiveReferenceView[] Reviews(ReferenceLap reference,ReferenceLap own)
+        {
+            return LiveReferenceCoach.ReviewLap(reference,own,ReferenceComparison.Compare(reference,own));
+        }
+        static void CheckCornerReview()
+        {
+            var reference=Source();
+            reference.CoordinateFrame=ReferenceLap.LmuCoordinateFrame;
+            foreach(var p in reference.Samples){p.X=p.DistanceM;p.Z=0;}
+            var own=ReferenceLap.LoadJson(reference.ToJson());
+            foreach(var p in own.Samples)
+            {
+                if(p.DistanceM>=300 && p.DistanceM<340)p.Steering=0;
+                p.Z=Math.Max(0,Math.Min(3,(p.DistanceM-415)*.1));
+                p.Time+=Math.Max(0,Math.Min(1.5,(p.DistanceM-420)/60));
+            }
+            var result=ReferenceComparison.Compare(reference,own);
+            var reviews=LiveReferenceCoach.ReviewLap(reference,own,result);
+            Check(reviews.Length==2 && reviews[0].LineDivergenceM==435 && reviews[0].EvidenceKind=="steer-onset-before-line","stored corner locates sustained line divergence with earlier steering event");
+            Check(reviews[0].NextAction.Contains("첫 조향") && reviews[0].Estimate.Contains("340 m") && reviews[0].TimeLossSeconds>1,"recorded steering landmarks, qualifying time loss and one practice action");
+            var live=Drive(Coach(reference),own);
+            Check(live.Count==2 && live[0].LineDivergenceM==reviews[0].LineDivergenceM && live[0].EvidenceKind==reviews[0].EvidenceKind,"same zone yields the same diagnosis in the overlay and file review");
+            Check(double.IsNaN(reviews[1].LineDivergenceM),"continuously displaced line has no fictitious divergence point");
+            var faster=ReferenceLap.LoadJson(own.ToJson());
+            for(int i=0;i<faster.Samples.Length;i++)faster.Samples[i].Time=reference.Samples[i].Time*.85;
+            var fast=Reviews(reference,faster)[0];
+            Check(fast.TimeLossSeconds<0 && fast.EvidenceKind=="steer-onset-before-line" && fast.NextAction.Contains("재현"),"quicker alternative line is described without a corrective prescription");
+            var lateInput=ReferenceLap.LoadJson(own.ToJson());
+            foreach(var p in lateInput.Samples){p.Time=reference.Samples[(int)(p.DistanceM/10)].Time;p.Z=Math.Max(0,Math.Min(3,(p.DistanceM-292)*.1));}
+            var later=Reviews(reference,lateInput)[0];
+            Check(later.EvidenceKind=="line-onset" && later.Observation.Contains("구분하기 어렵"),"an input after the line change is not presented as its precursor");
+            var entryGap=ReferenceLap.LoadJson(own.ToJson());entryGap.Samples[20].SpeedKph+=18;
+            Check(Reviews(reference,entryGap)[0].NextAction.Contains("같은 진입 속도"),"earlier input is not a comparable cause at materially different approach speed");
+            var spike=ReferenceLap.LoadJson(reference.ToJson());spike.Samples[43].Z=4;
+            Check(double.IsNaN(Reviews(reference,spike)[0].LineDivergenceM),"one isolated position excursion cannot mark a sustained divergence");
+            var incompatible=ReferenceLap.LoadJson(own.ToJson());incompatible.GameVersion="different";
+            Check(Reviews(reference,incompatible).Length==0 && LiveReferenceCoach.ReviewLap(reference,incompatible,result).Length==0,"incompatible pair or a reused result cannot be reviewed");
+            var gap=ReferenceLap.LoadJson(own.ToJson());gap.Samples=gap.Samples.Where(p=>p.DistanceM<340||p.DistanceM>470).ToArray();
+            Check(Reviews(reference,gap).Length==1 && Reviews(reference,gap)[0].CornerName.EndsWith("2"),"long gap excludes only the affected complete corner");
+            var spatial=ReferenceLap.LoadJson(reference.ToJson());
+            spatial.TimeBasis=ReferenceLap.DistanceOnlyTimeBasis;foreach(var p in spatial.Samples)p.Time=double.NaN;
+            var untimed=Reviews(spatial,own)[0];
+            Check(double.IsNaN(untimed.TimeLossSeconds) && untimed.EvidenceKind=="steer-onset-before-line" && untimed.Estimate.Contains("초 단위"),"position-only source has a measured input explanation without invented time");
+            var noWorld=ReferenceLap.LoadJson(reference.ToJson());var other=ReferenceLap.LoadJson(own.ToJson());
+            noWorld.LateralPositionBasis=other.LateralPositionBasis=ReferenceLap.LmuLateralBasis;
+            foreach(var p in noWorld.Samples){p.PathLateralM=0;p.X=p.Z=double.NaN;}
+            foreach(var p in other.Samples){p.PathLateralM=p.Z;p.X=p.Z=double.NaN;}
+            var channel=Reviews(noWorld,other)[0];
+            Check(channel.LineDivergenceM==435 && channel.LineObservation.Contains("게임 횡위치") && double.IsNaN(channel.MeanAbsoluteLineOffsetM),"matching measured lateral channels are explicitly labeled separately from map coordinates");
+            noWorld.LateralPositionBasis="unknown";
+            Check(double.IsNaN(Reviews(noWorld,other)[0].LineDivergenceM),"missing channel basis does not synthesize a line");
+            var gasSource=ReferenceLap.LoadJson(reference.ToJson());var gasOwn=ReferenceLap.LoadJson(own.ToJson());
+            for(int i=0;i<gasOwn.Samples.Length;i++)
+            {
+                var r=gasSource.Samples[i];var p=gasOwn.Samples[i];
+                p.Steering=r.Steering;
+                if(r.DistanceM>=400 && r.DistanceM<500)r.Throttle=1;
+                if(p.DistanceM>=355 && p.DistanceM<500)p.Throttle=1;
+                p.Z=Math.Max(0,Math.Min(3,(p.DistanceM-445)*.1));
+            }
+            var gas=Reviews(gasSource,gasOwn)[0];
+            Check(gas.LineDivergenceM==465 && gas.EvidenceKind=="throttle-return-before-line" && gas.NextAction.Contains("가속"),"one confirmed throttle return before a sustained path divergence produces a controlled pickup drill");
+            foreach(var p in gasOwn.Samples.Where(p=>p.DistanceM>=410 && p.DistanceM<=430))p.Throttle=.3;
+            Check(Reviews(gasSource,gasOwn)[0].EvidenceKind=="line-onset","multiple observed pickups in a complex do not imply aligned throttle landmarks");
+            var both=ReferenceLap.LoadJson(own.ToJson());
+            foreach(var p in both.Samples.Where(p=>p.DistanceM>=300 && p.DistanceM<340))p.Brake=0;
+            Check(Reviews(reference,both)[0].EvidenceKind=="overlapping-inputs-before-line","two overlapping antecedent changes are disclosed together");
+            var onlyBrake=ReferenceLap.LoadJson(both.ToJson());
+            for(int i=0;i<onlyBrake.Samples.Length;i++)
+            {
+                var p=onlyBrake.Samples[i];p.Steering=reference.Samples[i].Steering;p.Z=0;
+                if(p.DistanceM>=340 && p.DistanceM<=360)p.SpeedKph+=12;
+            }
+            Check(Reviews(reference,onlyBrake)[0].EvidenceKind=="brake-start-speed","resolved brake start and corresponding speed remain actionable without a line change");
         }
         // Optional local probe: replay the downloaded source as an artificial driver.
         // The actual author's samples are never embedded in this test or repository.

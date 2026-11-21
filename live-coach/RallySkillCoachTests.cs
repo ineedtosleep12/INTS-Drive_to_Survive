@@ -34,6 +34,18 @@ namespace IntsLiveCoach
             }
             return view;
         }
+        static CoachPrincipleView InputSequence(RallySkillCoach coach, Action<int,TelemetryFrame> set)
+        {
+            for (int i=0;i<42;i++)
+            {
+                var f=Frame(i,i<7?50-i:34,i<7?.03:i<17?.45:i<29?.23:.05,0);
+                f.Throttle=.22;
+                set(i,f);
+                var cue=coach.Update(f);
+                if (cue.NewFeedback) return cue;
+            }
+            throw new Exception("Rally sequence did not finish");
+        }
         public static int Run()
         {
             int assertions = 0;
@@ -68,9 +80,30 @@ namespace IntsLiveCoach
             var restarted = Frame(9, 40, .4, .2); restarted.Track = "another stage";
             check(!coach.Update(restarted).HasObservation, "context changes discard active turn");
             check(ExitOrder(12, false).Observation.Contains("0.5초 전"), "sustained throttle increase before steering unwind");
+            check(ExitOrder(12,false).Title.Contains("조향을 줄이기 전") && ExitOrder(12,false).NextDrill.Contains("풀기 시작할 때"),
+                "early power gets its own hypothesis and repeatable drill");
             check(ExitOrder(20, true).Observation.Contains("0.3초 후") && ExitOrder(20, true).Limits.Contains("수신 시각"), "later increase measured using the capture clock");
             check(ExitOrder(17, false).Observation.Contains("비슷한 때"), "near-simultaneous release and power");
             check(!ExitOrder(0, false).Observation.Contains("재입력"), "constant high throttle is not counted");
+            coach.Reset();
+            var brake=InputSequence(coach,(i,f)=>{f.Brake=i<24?.4:0;});
+            check(coach.LastCorner.Skill=="brake-through-unwind" && Math.Abs(coach.LastCorner.FootBrakeAfterUnwindSeconds-.7)<.001 &&
+                brake.Observation.Contains("0.7초") && brake.NextDrill.Contains("압력"),"held brake after measured unwind gets pressure-release drill");
+            coach.Reset();
+            InputSequence(coach,(i,f)=>{f.Brake=i<23 && i!=14?.4:0;});
+            check(coach.LastCorner.Skill==null && Math.Abs(coach.LastCorner.ReleaseAfterTurnInSeconds.Value-1.6)<.001,
+                "isolated low pedal does not confirm release; interrupted initial pressure not described as held continuously");
+            coach.Reset();
+            var low=InputSequence(coach,(i,f)=>{f.Throttle=i>=16 && i<26?.05:.22;f.TimeIsCaptureClock=true;});
+            check(coach.LastCorner.Skill=="low-pedals-on-exit" && low.Observation.Contains("8%") && low.Limits.Contains("수신 시각") &&
+                !coach.LastCorner.HandbrakeAfterUnwindSeconds.HasValue,"measured small pedals with unknown handbrake, timer provenance");
+            coach.Reset();
+            var handbrake=InputSequence(coach,(i,f)=>{f.Handbrake=i>=16 && i<24?.9:0;});
+            check(coach.LastCorner.Skill=="handbrake-through-unwind" && handbrake.NextDrill.Contains("핸드브레이크를 놓고") &&
+                coach.LastCorner.HandbrakeAfterUnwindSeconds>.5,"available handbrake channel supports an actionable observation");
+            coach.Reset();
+            InputSequence(coach,(i,f)=>{f.Handbrake=i==19?.9:0;});
+            check(coach.LastCorner.Skill==null && coach.LastCorner.HandbrakeAfterUnwindSeconds==0,"momentary handbrake not an exit pattern");
             coach.Reset();
             for (int i = 0; i < 8; ++i) coach.Update(Frame(i, 40, 0, .4));
             var reverse = Frame(8, 38, .4, .2); reverse.Gear = -1;

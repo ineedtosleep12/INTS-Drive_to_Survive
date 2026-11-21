@@ -38,8 +38,10 @@ namespace IntsLiveCoach
         {
             public double Elapsed;
             public double? AtM;
-            public string Kind, Observation, Next;
-            public object Summary() { return new { observedSeconds=Elapsed, distanceM=AtM, kind=Kind, observation=Observation, next=Next }; }
+            public string Kind, Title, Observation, Principle, Next;
+            public RallySkillCoach.CornerEvidence Evidence;
+            public object Summary() { return new { observedSeconds=Elapsed, distanceM=AtM, kind=Kind, title=Title,
+                observation=Observation, possibleMechanism=Principle, next=Next, evidence=Evidence }; }
         }
 
         static bool Finite(double x) { return !double.IsInfinity(x) && !double.IsNaN(x); }
@@ -170,16 +172,13 @@ namespace IntsLiveCoach
             {
                 int reviewed = turnCount + (cue.NewFeedback?1:0);
                 cue.EventId = runId+"-corner-"+reviewed;
-                cue.NextDrill = reviewed%2==1 ?
-                    "다음 비슷한 굽이에서 브레이크를 부드럽게 풀 때 차가 얼마나 회전하는지 느껴 보세요." :
-                    "다음 비슷한 굽이에서 핸들을 풀면서 가속을 다시 올리는 순간을 느껴 보세요.";
             }
             bool changedSide = ObserveSteering(f);
             if (cue.NewFeedback)
             {
                 lastCornerAt=f.Time;
                 turnCount++; currentSection.Turns++;
-                Note(f, "corner", cue.Observation, cue.NextDrill);
+                Note(f, "corner", cue, corners.LastCorner);
             }
             else if (changedSide || f.Time < switchUntil)
             {
@@ -188,7 +187,7 @@ namespace IntsLiveCoach
                     Observation="한쪽 조향에 이어 반대쪽 조향을 유지했습니다.",
                     NextDrill="첫 방향의 핸들을 풀 때 다음 출구를 보고, 두 번째 방향으로 옮기는 속도를 느껴 보세요.",
                     PossibleMechanism="방향이 바뀌면 옆으로 실린 하중도 옮겨 가므로 차의 반응과 손의 움직임 사이에 차이가 생길 수 있어요." };
-                if (changedSide) Note(f, "steering-reversal", cue.Observation, cue.NextDrill);
+                if (changedSide) Note(f, "steering-reversal", cue, null);
             }
             else if ((!cue.HasObservation || (cornerReview && f.Time-lastCornerAt>2)) &&
                 previousSection != null && f.Time < sectionNoticeUntil &&
@@ -228,10 +227,25 @@ namespace IntsLiveCoach
             current = cue;
             return cue.Copy();
         }
-        void Note(TelemetryFrame f, string kind, string observation, string next)
+        void Note(TelemetryFrame f, string kind, CoachPrincipleView cue, RallySkillCoach.CornerEvidence evidence)
         {
             if (notes.Count >= 4096) return;
-            notes.Add(new Turn { Elapsed=f.Time-firstTime, AtM=Optional(lastDistance), Kind=kind, Observation=observation, Next=next });
+            notes.Add(new Turn { Elapsed=f.Time-firstTime, AtM=Optional(lastDistance), Kind=kind, Title=cue.Title,
+                Observation=cue.Observation, Principle=cue.PossibleMechanism, Next=cue.NextDrill, Evidence=evidence });
+        }
+        Turn PracticeFocus(out int count)
+        {
+            // Pick a repeated, actually observed timing pattern. A split time alone
+            // offers no evidence for choosing a skill at a particular corner.
+            var group = notes.Where(n => n.Evidence != null && n.Evidence.Skill != null)
+                .GroupBy(n => n.Evidence.Skill).OrderByDescending(g => g.Count()).ThenByDescending(g => g.Last().Elapsed).FirstOrDefault();
+            count = group == null ? 0 : group.Count();
+            return group == null ? null : group.Last();
+        }
+        static string FocusLabel(Turn focus, int count)
+        {
+            string location = focus.Evidence.TurnInMetres.HasValue ? Metres(focus.Evidence.TurnInMetres.Value)+" 진입" : "관측 "+Clock(focus.Elapsed)+" 출구";
+            return focus.Title+" · "+location+(count>1?" · 같은 조작 순서 "+count+"회":"");
         }
         bool ObserveSteering(TelemetryFrame f)
         {
@@ -274,17 +288,25 @@ namespace IntsLiveCoach
         CoachPrincipleView Seal(string reason, string title)
         {
             var lastTurn = notes.LastOrDefault(n => n.Kind == "corner") ?? notes.LastOrDefault();
+            int count;
+            var focus=PracticeFocus(out count);
             string comparison=repeat.Finish(reason);
             var report = new CoachPrincipleView { LessonId=Lesson, Status=Progress(), Title=title, HasObservation=true,
                 NewFeedback=true, EventId=runId+"-"+reason,
                 Observation="관측 "+Clock(previous.Time-firstTime)+" · 최고 "+Math.Round(highestSpeed)+" km/h · 복기 "+turnCount+"회"+
                     (distanceBased && firstDistance>5 ? " · 중간부터 관측" : ""),
                 NextDrill=lastTurn == null ? "다음 주행은 진입 속도를 일정하게 맞춘 뒤 제동 해제를 관찰해 보세요." : lastTurn.Next,
+                PossibleMechanism=lastTurn==null?"":lastTurn.Principle,
                 Limits=distanceBased ? "게임의 스테이지 거리 기준입니다. 주행 유효성·공식 완주 결과는 게임에서 확인하세요." :
                     "스테이지 거리·공식 완주 신호가 없어 수신 시각과 직접 종료 기록을 사용합니다." };
             if(comparison.Length>0) report.Observation=comparison+"\n"+report.Observation;
             string repeatDrill=repeat.NextDrill();
-            if (repeatDrill.Length>0) report.NextDrill=repeatDrill;
+            if (focus!=null)
+            {
+                report.Observation=FocusLabel(focus,count)+"\n"+report.Observation;
+                report.PossibleMechanism=focus.Principle; report.NextDrill=focus.Next;
+            }
+            else if (repeatDrill.Length>0) report.NextDrill=repeatDrill;
             lastRun=RunSummary(reason); lastState=reason; lastReport=report.Copy(); current=report;
             lastReviewText=DescribeRun(title);
             holdReport=true; active=false;
@@ -292,6 +314,8 @@ namespace IntsLiveCoach
         }
         object RunSummary(string state)
         {
+            int count;
+            var focus=PracticeFocus(out count);
             return new {id=runId, state=state, track=previous.Track, car=previous.Car, gameVersion=previous.GameVersion,
                 clock=previous.TimeIsCaptureClock?"capture":"simulation", observedSeconds=previous.Time-firstTime,
                 startDistanceM=Optional(firstDistance), endDistanceM=Optional(lastDistance), lengthM=Optional(stageLength),
@@ -299,6 +323,7 @@ namespace IntsLiveCoach
                 peakSpeedKph=highestSpeed, reviewedTurns=turnCount, steeringReversals=switches,
                 sectionBasis=distanceBased?"quarters-of-stage-distance":"30s-observation-windows",
                 sections=sections.Select(s=>s.Summary()).ToArray(), notes=notes.Select(n=>n.Summary()).ToArray(),
+                practiceFocus=focus==null?null:focus.Summary(), focusOccurrenceCount=count,
                 repeatComparison=repeat.Snapshot() };
         }
         public object Snapshot()
@@ -317,6 +342,14 @@ namespace IntsLiveCoach
             if (distanceBased) s.AppendLine("관측 범위 "+Metres(firstDistance)+" → "+Metres(lastDistance)+
                 (firstDistance>5 ? " · 도중 연결" : " · 출발 부근부터 관측"));
             else s.AppendLine("첫 주행 신호부터 PC 수신 시각으로 기록했습니다.");
+            int count;
+            var focus=PracticeFocus(out count);
+            if (focus!=null)
+            {
+                s.AppendLine().AppendLine("다음 주행에서 연습할 코너");
+                s.AppendLine(FocusLabel(focus,count));
+                s.AppendLine(focus.Principle); s.AppendLine(focus.Next);
+            }
             string comparison=repeat.Review();
             if (comparison.Length>0) { s.AppendLine(); s.AppendLine(comparison); }
             s.AppendLine();
@@ -331,8 +364,9 @@ namespace IntsLiveCoach
             {
                 s.AppendLine();
                 string where=Clock(note.Elapsed)+(note.AtM.HasValue ? " · "+Metres(note.AtM.Value) : "");
-                s.AppendLine(where+(note.Kind=="corner"?" · 코너 복기":" · 연속 조향"));
+                s.AppendLine(where+" · "+note.Title);
                 s.AppendLine(note.Observation);
+                s.AppendLine(note.Principle);
                 s.AppendLine(note.Next);
             }
             return s.ToString().TrimEnd();

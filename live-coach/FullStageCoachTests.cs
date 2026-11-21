@@ -43,6 +43,35 @@ namespace IntsLiveCoach
         }
         static Dictionary<string,object> Comparison(FullStageCoach c,string name)
         { return Part(c,name)["repeatComparison"] as Dictionary<string,object>; }
+        static void CheckSkillFocus(Action<bool,string> check,bool capture)
+        {
+            var c=new FullStageCoach();
+            CoachPrincipleView first=null;
+            for(int i=0;i<=120;i++)
+            {
+                var f=capture?Acr(i):Frame(i,i,120);
+                int step=i%40;
+                f.Steering=step<7?.03:step<17?.45:step<23?.23:.05;
+                f.Throttle=step<12 || i>=80?.12:.7;
+                if (!capture) f.OnTrack=i<120;
+                var v=c.Update(f);
+                if (v.NewFeedback && v.Title.Contains("조향을 줄이기 전")) first=v;
+            }
+            var end=capture?c.FinishManually():c.LastReport;
+            var run=Part(c,"lastRun");
+            var focus=(Dictionary<string,object>)run["practiceFocus"];
+            var evidence=(Dictionary<string,object>)focus["evidence"];
+            check(first!=null && first.NextDrill.Contains("풀기 시작할 때") && first.PossibleMechanism.Contains("구동력"),
+                "stage HUD preserves corner-specific action and possible mechanism");
+            check((string)evidence["Skill"]=="power-before-unwind" && Convert.ToInt32(run["focusOccurrenceCount"])==2 &&
+                (string)focus["next"]==end.NextDrill && end.PossibleMechanism==first.PossibleMechanism,
+                "stage summary chooses repeated observation even after a later generic corner");
+            check(evidence["TurnInMetres"]==null?capture:!capture && Math.Abs(Convert.ToDouble(evidence["TurnInMetres"])-47)<.01,
+                "native turn-in metres when available");
+            check((string)evidence["Clock"]==(capture?"capture":"simulation") && c.ReviewText().Contains(first.PossibleMechanism) &&
+                c.ReviewText().Contains("같은 조작 순서 2회") && c.ReviewText().Contains(first.NextDrill),
+                "measured evidence, location, actionable focus and principle preserved in review");
+        }
         static void CheckRepeats(Action<bool,string> check)
         {
             var c=new FullStageCoach();
@@ -129,7 +158,8 @@ namespace IntsLiveCoach
             check(sections>0 && ((IList)run["sections"]).Count==4,"four sections and a live section review");
             check((bool)run["observedNearStart"] && (string)run["state"]=="distance-end","coverage and endpoint provenance");
             check(((IList)run["notes"]).Count>=2 && Part(coach,"current")==null,"observations persist after finish");
-            check(coach.ReviewText().Contains("75–100%") && coach.ReviewText().Contains("다음 비슷한 굽이"),"section and corner review available inside app");
+            check(coach.ReviewText().Contains("75–100%") && coach.ReviewText().Contains("제동을 풀 때") &&
+                coach.ReviewText().Contains("같은 진입 속도"),"section and corner principle/drill available inside app");
             var restart=Frame(122,0,120); restart.StageElapsedSeconds=.1;
             check(coach.Update(restart).Status.Contains("0%") && Part(coach,"current")!=null,"restart after completed stage");
             coach.Reset();
@@ -177,6 +207,7 @@ namespace IntsLiveCoach
             for(int i=0;i<20;i++) coach.Update(Acr(i));
             check(coach.FinishManually().Title.Contains("직접 종료") && !coach.LastReport.NewFeedback,"manual end while connected");
             CheckRepeats(check);
+            CheckSkillFocus(check,false); CheckSkillFocus(check,true);
             return count;
         }
     }

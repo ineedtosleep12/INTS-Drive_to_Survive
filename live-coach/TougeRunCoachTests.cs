@@ -55,7 +55,10 @@ namespace IntsLiveCoach
             double slide=Convert.ToDouble(d.Run["slideSeconds"]);
             Check(slide>5 && slide<6 && Convert.ToDouble(d.Run["observedSeconds"])>7.4,"observed time distinct from slide time");
             Check(d.State()["previous"]==null && !coach.Update(d.Frame).NewFeedback,"first summary retained without repeated cue");
+            Check(d.Run["diagnosis"]!=null && d.Run["diagnosisAtSeconds"]!=null && coach.ReviewText().Contains("두 굽이를 이으려던") &&
+                recap.Observation.Contains("반대 옆미끄러짐"),"a chain break retains measured explanation after the route ends");
             d.Route(true); coach.FinishManually();
+            Check(d.Run["diagnosis"]==null,"a new run never inherits the previous attempt's failure");
             Check(Convert.ToInt32(d.Run["transitions"])==3 && Convert.ToInt32(d.Run["longestChainTransitions"])==3,"linked course registers uninterrupted alternate turns");
             Check(d.State()["previous"]!=null && coach.ReviewText().Contains("연결 2 → 3회") && coach.ReviewText().Contains("주행거리 "),
                 "spatially matched repeat identifies change across route and quarter");
