@@ -1,0 +1,28 @@
+{
+  "game": "LMU",
+  "car": "Porsche 911 GT3 R (992)",
+  "layout": "RC",
+  "gameVersion": "unknown",
+  "lapNumber": 5,
+  "expectedLapTime": 105.18964,
+  "distanceBasis": "lmu-motec-lap-distance-m",
+  "sourceUrl": "https://www.youtube.com/watch?v=CpqSXHT9q3Y",
+  "author": "PS_Racing",
+  "licence": "Creator offers a free personal download. Permission to redistribute original or derived traces is unconfirmed.",
+  "provenance": "Daytona International Speedway Road Course appears in the LD header. The author identifies the Porsche 992 in the linked video. The LDX lists fastest lap 5 at 1:45.190. In the LD, Lap Number 5 has the same Lap Start Elapsed Time difference, Last Laptime and Best Laptime (105.18964 s). Creator ZIP 992_LMGT3_DAYTONA.zip SHA256 8c765b5f1629c20ac0e74257d7ba6ae974e001df04850d1601cc2cc9c58ecda9.",
+  "conditions": {
+    "sourceDownloadUrl": "https://drive.google.com/drive/folders/1WRY5dusmasOeeRubHf0ns4eOjvyafHUk",
+    "sourceCarLabel": "Manthey DK Engineering 2026 #91:WEC",
+    "sourceCarClass": "GT3",
+    "sourceLapTimeClaim": "1:45.190",
+    "authorAmbientCelsius": "21",
+    "authorTrackCelsius": "24",
+    "authorTrackGrip": "Saturated Grip",
+    "trackLimitsValidity": "Published as a hotlap. No independent validity flag decoded.",
+    "distanceMapping": "Recorded MoTeC Lap Distance; correspondence to native scoring distance unverified.",
+    "pathLateralMapping": "Recorded MoTeC Path Lateral; correspondence to native lateral position unverified.",
+    "setup": "Q and R setup files accompany the recording; the setup used for the fastest lap is unknown.",
+    "bop": "unknown",
+    "tyreCompound": "unknown"
+  }
+}

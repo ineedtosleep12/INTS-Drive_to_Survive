@@ -1,0 +1,29 @@
+{
+  "game": "LMU",
+  "car": "Porsche 911 GT3 R (992)",
+  "layout": "unknown",
+  "gameVersion": "unknown",
+  "lapNumber": 48,
+  "expectedLapTime": 120.51074,
+  "distanceBasis": "lmu-motec-lap-distance-m",
+  "sourceUrl": "https://www.youtube.com/watch?v=hwGPxLUk_Kw",
+  "author": "PS_Racing",
+  "licence": "Creator offers a free personal download. Permission to redistribute original or derived traces is unconfirmed.",
+  "provenance": "The LD header identifies Sebring International Raceway. The author identifies the Porsche 992 in the linked video. The LDX lists fastest lap 4 at 2:00.511. The LD game lap number is 48. The difference between successive Lap Start Elapsed Time values is 120.51074 s. Last Laptime and Best Laptime both read 120.51076 s. Creator ZIP 992_LMGT3_SEBRING.zip SHA256 6410cc1053cef29750d2b1ba41b16c31e1f467a4bf94422d7cb6c89439481295.",
+  "conditions": {
+    "sourceDownloadUrl": "https://drive.google.com/drive/folders/1H7hNuQsbr5Cat6rGtSPUAlqlY5a48UPP",
+    "sourceCarLabel": "Manthey 1st Phorm 2025 #92:LM",
+    "sourceCarClass": "GT3",
+    "sourceLapTimeClaim": "2:00.511",
+    "authorAmbientCelsius": "21",
+    "authorTrackCelsius": "30",
+    "authorTrackGrip": "Saturated Grip",
+    "sourceLayoutEvidence": "LD names the venue only. Measured lap samples span 8.093 to 5809.69275 m. A published LMU GT3 event lists the Sebring 12H layout at 5.820 km (https://simracing-gp.net/event-2889). Compare only when the actual game's course distance is compatible.",
+    "trackLimitsValidity": "Published as a hotlap. No independent validity flag decoded.",
+    "distanceMapping": "Recorded MoTeC Lap Distance; correspondence to native scoring distance unverified.",
+    "pathLateralMapping": "Recorded MoTeC Path Lateral; correspondence to native lateral position unverified.",
+    "setup": "Q and R setup files accompany the recording; the setup used for the fastest lap is unknown.",
+    "bop": "unknown",
+    "tyreCompound": "unknown"
+  }
+}

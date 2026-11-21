@@ -1,0 +1,27 @@
+{
+  "game": "LMU",
+  "car": "Porsche 911 GT3 R (992)",
+  "layout": "unknown",
+  "gameVersion": "unknown",
+  "lapNumber": 4,
+  "expectedLapTime": 93.76056,
+  "distanceBasis": "lmu-motec-lap-distance-m",
+  "sourceUrl": "https://www.youtube.com/watch?v=m2UE0mKyJW8",
+  "author": "PS_Racing",
+  "licence": "Author provides a free personal download. Public redistribution permission for the original and derived telemetry is unconfirmed. Personal use only.",
+  "provenance": "Creator video and fastest time in companion LDX agree with the selected lap. Original 992_LMGT3_INTERLAGOS.zip (Drive file 1T2ZuLpkvPTdqjW11q9zezGuQdYRkE1jy); SHA256 f16f7acceda326e7bb3d9ee56c4e930106933a69c7da453b2eaead4b7624ae8b. Track label decoded from verified UTF-8 bytes in LD venue field. Game scoring clock and Last Laptime checked by importer. Track-limit validity unconfirmed.",
+  "conditions": {
+    "sourceCarLabel": "Manthey DK Engineering 2026 #91:WEC",
+    "sourceTrackLabel": "Autódromo José Carlos Pace",
+    "sourceCarClass": "GT3",
+    "sourceDownloadUrl": "https://drive.google.com/drive/folders/1FXCmgHb8JRg6PnimHDHtzMVOCTJ7QIVw",
+    "sourceLapTimeClaim": "1:33.761",
+    "authorAmbientCelsius": "21",
+    "authorTrackCelsius": "27",
+    "authorTrackGrip": "Saturated Grip",
+    "bop": "unknown",
+    "tyreCompound": "unknown",
+    "setup": "Q and R setups included; recorded setup unknown",
+    "weather": "unknown"
+  }
+}

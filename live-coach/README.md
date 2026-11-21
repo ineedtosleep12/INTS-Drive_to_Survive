@@ -19,7 +19,9 @@ Windows x64에서 실제 심레이싱 게임의 텔레메트리를 받아 작은
 
 **다른 운전자의 기준**을 쓰려면 서킷 화면에서 해당 차량·레이아웃의 파일을 골라 **이 기록으로 비교 열기**를 누르세요. 공개 묶음의 지네타 LMP3 기록은 이몰라·후지·바레인·바르셀로나·COTA·루사일·폴 리카르 3A에서, 페라리 296 LMGT3 Evo 기록은 실버스톤 인터내셔널에서 측정됐습니다. 폴 리카르 3A와 실버스톤 인터내셔널을 이용할 때는 게임에서도 짧은 레이아웃을 선택하세요. 후지 기록은 계측 사이의 거리를 속도로 보간해 **기록 거리 탐색 정렬**을 켜야 합니다. 이몰라 원본에는 세부 레이아웃명이 없습니다. 공통 위치를 확인할 수 있는 구간에서만 비교합니다. 8개 모두 작성 당시의 주행이며 원본의 랩 카운트만으로 공식 유효 핫랩을 확정할 수 없습니다. [원본·차량·가져오기 방법](LMU-COMMUNITY-SOURCES.md)
 
-**포르쉐 992**를 연습할 때는 포르쉐 파일이나 직접 기록한 포르쉐 랩을 선택하세요. 세브링과 실버스톤 WEC에서도 첫 유효 랩을 고정하면 내 랩끼리 비교할 수 있습니다. 코스 안내의 길이는 공식 대표 레이아웃을 고르는 데 쓰며 제동 지점·구간 손실은 게임이 보내는 코스 거리에서 계산합니다. [LMU 공식 서킷 목록](https://lemansultimate.com/circuits/)
+**포르쉐 992**로 달리면 개인용 묶음에서 아래 표의 LMU 기준 11개를 사용할 수 있습니다. 후지와 실버스톤 WEC에서는 포르쉐 온보드를 보고 첫 유효 랩을 고정해 자신의 제동과 주행선을 비교하세요. 18개 코스 모두 포르쉐 온보드를 연결했습니다. [LMU 공식 서킷 목록](https://lemansultimate.com/circuits/)
+
+세브링의 공식 안내 길이는 6.019 km이고 LMU GT3 대회의 12H 코스 안내는 5.820 km입니다. 포르쉐 기록은 5.820 km를 넣은 모의 입력에서 코너 탈출 코칭이 작동했습니다. 6.019 km를 보고하는 세션에서는 이 기록과의 거리 비교를 보류하므로 내 첫 랩을 기준으로 연습하세요. 앱은 실제 수신 거리를 그대로 사용합니다. [LMU 공식 세브링 안내](https://lemansultimate.com/circuit/sebring/) · [LMU GT3 대회의 12H 코스 안내](https://simracing-gp.net/event-2889)
 
 ## 코스를 이어 달리는 라이브 코칭
 
@@ -106,11 +108,18 @@ node live-coach/import-accreplay.mjs telemetry.json details.json live-coach/refe
 | LMU / Spa-Francorchamps | 2:17.673 | 동일, 실측 기온 10°C·노면 약 20.6°C는 영상 설명 21/28°C와 다름 | [PS_Racing](https://www.youtube.com/watch?v=F2b4f4jgDj4) |
 | LMU / Le Mans | 3:57.100 | 동일, 시작선 직전 음수 거리 표본 1개는 제외 | [PS_Racing](https://www.youtube.com/watch?v=KyBXVChpf8I) |
 | LMU / Portimão | 1:43.913 | 동일 | [PS_Racing](https://www.youtube.com/watch?v=UYHhD2EDuKY) |
+| LMU / Imola | 1:42.773 | 탐색 정렬 후 제동·구간 시간·횡위치. 원본의 WEC·ELMS 계측선 구분 미확인 | [PS_Racing](https://www.youtube.com/watch?v=owWwuADvhdQ) |
+| LMU / Sebring | 2:00.511 | 5.820 km 거리 조건에서 탐색 비교 | [PS_Racing](https://www.youtube.com/watch?v=hwGPxLUk_Kw) |
+| LMU / Bahrain | 1:58.968 | 탐색 정렬 후 제동·구간 시간·횡위치 | [PS_Racing](https://www.youtube.com/watch?v=81g6ebI2OnE) |
+| LMU / Barcelona | 1:41.178 | 동일 | [PS_Racing](https://www.youtube.com/watch?v=QMV7WKtBC04) |
+| LMU / Interlagos | 1:33.761 | 4.273 km 거리 조건에서 탐색 비교 | [PS_Racing](https://www.youtube.com/watch?v=m2UE0mKyJW8) |
+| LMU / Daytona | 1:45.190 | 로드 코스 제동·구간 시간·횡위치 | [PS_Racing](https://www.youtube.com/watch?v=CpqSXHT9q3Y) |
+| LMU / Laguna Seca | 1:21.860 | 탐색 정렬 후 제동·구간 시간·횡위치 | [PS_Racing](https://www.youtube.com/watch?v=1d6AkW39UZk) |
 | ACC / Nürburgring GP | 1:53.749 (영상 표기 1:53.750) | **입력 열람 전용**, 핫랩 오버레이·코스 위치 비교는 미지원 | [PS_Racing](https://www.youtube.com/watch?v=demCGTihz3A) |
 
 2026-11-21 확인한 [LMU 공식 2023 수록 목록](https://guide.lemansultimate.com/hc/en-gb/articles/13210474811023-2023-Season-Content-Cars-and-Tracks), [2024 목록](https://guide.lemansultimate.com/hc/en-gb/articles/13210558071439-2024-Season-Content-Cars-and-Tracks), [ELMS 목록](https://guide.lemansultimate.com/hc/en-gb/articles/13210587620495-European-Le-Mans-Series-Content)에는 Nürburgring이 없으므로 ACC 데이터로 구분했습니다. 기존 PS_Racing의 ACC MoTeC 원본에는 코스 위치·GPS·월드 좌표가 없습니다. 이 자료의 그래프 가로축은 실제 속도를 적분한 **이동거리**이며 코스 위치가 아니므로 위치별 손실 비교를 차단합니다. 원본 조향 각도는 앱의 **조향°** 그래프와 `recordings`의 별도 파일에 보존하고, 임의로 정규화하지 않습니다. 새 ACCReplay 기록은 위 0.4.0 설명처럼 코스 위치 비교를 지원합니다.
 
-새 기준 JSON은 실행 파일 옆 `references` 폴더에 넣고 **목록 새로고침**을 누르거나 **기준 주행 열기**로 선택합니다. 자동차 셋업 JSON은 텔레메트리 기준 파일이 아닙니다. 실제 기록의 출처·게임·차량·단위·거리 기준이 필요하며, 없는 코스의 핫랩·라인을 자동 생성하지 않습니다. LMU 네 파일은 원본의 Lap Start/Last/Best 시계가 일치하지만, 독립적인 트랙 리밋 유효성이나 현재 패치와의 물리 일치는 미확인입니다.
+새 기준 JSON은 실행 파일 옆 `references` 폴더에 넣고 **목록 새로고침**을 누르거나 **기준 주행 열기**로 선택합니다. 자동차 셋업 JSON은 텔레메트리 기준 파일이 아닙니다. 실제 기록의 출처·게임·차량·단위·거리 기준이 필요하며, 없는 코스의 핫랩·라인을 자동 생성하지 않습니다. LMU 포르쉐 기록은 원본 랩 시계와 제작자 기록을 대조했습니다. 독립적인 트랙 리밋 승인과 현재 패치의 BoP 일치 여부는 미확인입니다.
 
 ## 포르쉐 992 · 몬자 기준 주행
 

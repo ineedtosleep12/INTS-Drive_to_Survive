@@ -1,0 +1,28 @@
+{
+  "game": "LMU",
+  "car": "Porsche 911 GT3 R (992)",
+  "layout": "unknown",
+  "gameVersion": "unknown",
+  "lapNumber": 47,
+  "expectedLapTime": 118.96826,
+  "distanceBasis": "lmu-motec-lap-distance-m",
+  "sourceUrl": "https://www.youtube.com/watch?v=81g6ebI2OnE",
+  "author": "PS_Racing",
+  "licence": "Creator offers a free personal download. Permission to redistribute original or derived traces is unconfirmed.",
+  "provenance": "The LD header identifies Bahrain International Circuit. The author identifies the Porsche 992 in the linked video. The LDX lists fastest lap 5 at 1:58.968. The LD game lap number is 47. The difference between successive Lap Start Elapsed Time values is 118.96826 s. Last Laptime and Best Laptime both read 118.96828 s. Creator ZIP 992_LMGT3_Bahrain.zip SHA256 82da034757c5c031c7b3ac2e1ed1b62ba53e0abfec3c365cdb958d5dd59e7d72.",
+  "conditions": {
+    "sourceDownloadUrl": "https://drive.google.com/drive/folders/1iNR8ruw9010GwbvLpyFWYx4kUeEmYOtL",
+    "sourceCarLabel": "Manthey DK Engineering 2026 #91:LM",
+    "sourceCarClass": "GT3",
+    "sourceLapTimeClaim": "1:58.968",
+    "authorAmbientCelsius": "20",
+    "authorTrackCelsius": "36",
+    "authorTrackGrip": "Saturated Grip",
+    "trackLimitsValidity": "Published as a hotlap. No independent validity flag decoded.",
+    "distanceMapping": "Recorded MoTeC Lap Distance; correspondence to native scoring distance unverified.",
+    "pathLateralMapping": "Recorded MoTeC Path Lateral; correspondence to native lateral position unverified.",
+    "setup": "Q and R setup files accompany the recording; the setup used for the fastest lap is unknown.",
+    "bop": "unknown",
+    "tyreCompound": "unknown"
+  }
+}

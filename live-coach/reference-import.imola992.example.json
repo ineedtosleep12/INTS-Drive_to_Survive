@@ -1,0 +1,27 @@
+{
+  "game": "LMU",
+  "car": "Porsche 911 GT3 R (992)",
+  "layout": "unknown",
+  "gameVersion": "unknown",
+  "lapNumber": 19,
+  "expectedLapTime": 102.77308,
+  "distanceBasis": "lmu-motec-lap-distance-m",
+  "sourceUrl": "https://www.youtube.com/watch?v=owWwuADvhdQ",
+  "author": "PS_Racing",
+  "licence": "Author provides a free personal download. Public redistribution permission for the original and derived telemetry is unconfirmed. Personal use only.",
+  "provenance": "Creator video and fastest time in companion LDX agree with the selected lap. Original 992_IMOLA.zip (Drive file 1KmpJeelNPYQD4jhjHhpSjdYmM7hPbsrr); SHA256 7cea4c646765c4df8552425f81f2e2e35d6450fb6ad64d1977917a37f2c2f63c. Track label decoded from verified UTF-8 bytes in LD venue field. Game scoring clock and Last Laptime checked by importer. Track-limit validity unconfirmed.",
+  "conditions": {
+    "sourceCarLabel": "Manthey 1st Phorm 2025 #92:LM",
+    "sourceTrackLabel": "Autodromo Enzo e Dino Ferrari",
+    "sourceCarClass": "GT3",
+    "sourceDownloadUrl": "https://drive.google.com/drive/folders/1YMt241fO7EOhZWrzaXcPYlgkORgxMdOi",
+    "sourceLapTimeClaim": "1:42.773",
+    "authorAmbientCelsius": "21",
+    "authorTrackCelsius": "38",
+    "authorTrackGrip": "Saturated Grip",
+    "bop": "unknown",
+    "tyreCompound": "unknown",
+    "setup": "Q and R setups included; recorded setup unknown",
+    "weather": "unknown"
+  }
+}

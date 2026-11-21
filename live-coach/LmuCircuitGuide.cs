@@ -47,8 +47,12 @@ namespace IntsLiveCoach
         // Two layouts can share a length. An explicit conflicting label always wins.
         public bool MatchesPracticeLayout(string track, double lengthM)
         {
-            if (String.IsNullOrWhiteSpace(track) || Double.IsNaN(lengthM) ||
-                Math.Abs(lengthM - LengthMeters) > LengthMeters * 0.01) return false;
+            if (String.IsNullOrWhiteSpace(track) || !ReferenceLap.Finite(lengthM)) return false;
+            // The organizer's LMU Sebring 12H track entry lists 5820 m (event-2889
+            // at simracing-gp.net). The official venue guide lists 6019 m. This
+            // accepts either documented scale for the drill, without converting a lap.
+            bool sebringScoringLength = Id == "sebring" && Math.Abs(lengthM - 5820) <= 10;
+            if (!sebringScoringLength && Math.Abs(lengthM - LengthMeters) > LengthMeters * 0.01) return false;
             string remainder = NormalizeWords(track);
             bool foundVenue = false;
             foreach (string alias in aliases)
@@ -109,7 +113,7 @@ namespace IntsLiveCoach
                     "7번 헤어핀 · 바퀴가 곧게 선 상태에서 먼저 감속하세요. 핸들을 감을 때 브레이크를 조금씩 풀면 차가 안쪽을 향하는 느낌이 어떻게 달라지는지 확인하세요.",
                     "17번 선셋 벤드 · 요철에서 차가 흔들릴 때는 가속 페달을 일정하게 유지해 보세요. 차가 가라앉고 핸들을 펴면서 더 밟아 다음 결승선에서 속도를 비교하세요."
                 }, "https://lemansultimate.com/circuit/sebring/", "https://www.youtube.com/watch?v=hwGPxLUk_Kw",
-                "sebring international raceway"),
+                "sebring international raceway", "sebring 12h", "sebring international raceway 12h"),
             new LmuCircuitCourse("monza", "몬자", "WEC", 5793,
                 "긴 직선 끝에서 충분히 감속하고 첫 시케인의 두 번째 꼭짓점을 준비합니다.",
                 new[] {

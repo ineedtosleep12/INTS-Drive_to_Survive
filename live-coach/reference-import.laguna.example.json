@@ -1,0 +1,27 @@
+{
+  "game": "LMU",
+  "car": "Porsche 911 GT3 R (992)",
+  "layout": "unknown",
+  "gameVersion": "unknown",
+  "lapNumber": 50,
+  "expectedLapTime": 81.85986,
+  "distanceBasis": "lmu-motec-lap-distance-m",
+  "sourceUrl": "https://www.youtube.com/watch?v=1d6AkW39UZk",
+  "author": "PS_Racing",
+  "licence": "Author provides a free personal download. Public redistribution permission for the original and derived telemetry is unconfirmed. Personal use only.",
+  "provenance": "Creator video and fastest time in companion LDX agree with the selected lap. Original 992_LMGT3_LagunaSeca.zip (Drive file 1b9NmPHGezjXO_gZUEZjcra1zQcUF5nb5); SHA256 2537b1c1f47a75d4a87d29ba2fc467d57d8bc2504bcc91c69a5f24e1b1a10e44. Track label decoded from verified UTF-8 bytes in LD venue field. Game scoring clock and Last Laptime checked by importer. Track-limit validity unconfirmed.",
+  "conditions": {
+    "sourceCarLabel": "Manthey DK Engineering 2026 #91:WEC",
+    "sourceTrackLabel": "WeatherTech Raceway Laguna Seca",
+    "sourceCarClass": "GT3",
+    "sourceDownloadUrl": "https://drive.google.com/drive/folders/1l98E_GdVGFxOzQZeqHC05Fgf_swy_4kH",
+    "sourceLapTimeClaim": "1:21.860",
+    "authorAmbientCelsius": "21",
+    "authorTrackCelsius": "30",
+    "authorTrackGrip": "Saturated Grip",
+    "bop": "unknown",
+    "tyreCompound": "unknown",
+    "setup": "Q and R setups included; recorded setup unknown",
+    "weather": "unknown"
+  }
+}

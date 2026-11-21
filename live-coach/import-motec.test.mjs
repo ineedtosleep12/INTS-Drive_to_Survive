@@ -80,6 +80,13 @@ test('signed 8/16/32-bit and 32/64-bit floating samples decode with declared tra
     raw.forEach((v,i)=>assert.ok(Math.abs(result[i]-(v/2*0.1*3+7))<1e-7));
   }
 });
+test('UTF-8 and single-byte venue names both preserve the accented game label',()=>{
+  for (const encoding of ['utf8','latin1']) {
+    const bytes=binaryChannel(3,2,[1,2]);
+    bytes.write('Autódromo José Carlos Pace',350,64,encoding);
+    assert.equal(readLd(bytes).header.track,'Autódromo José Carlos Pace');
+  }
+});
 test('unsupported representation remains unknown; zero scale, missing data and nonfinite reject',()=>{
   const unknown=binaryChannel(99,2,[12,13]);assert.equal(readLd(unknown).channels.get('test').values,null);
   assert.throws(()=>readLd(binaryChannel(3,2,[1,2],{scale:0})),/metadata/);

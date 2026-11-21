@@ -47,6 +47,10 @@ namespace IntsLiveCoach
                 !byId["silverstone"].MatchesPracticeLayout("Silverstone International Circuit - National", 5891) &&
                 !byId["silverstone"].MatchesPracticeLayout("Silverstone (ELMS)", 5891), "Silverstone alternatives");
             Check(byId["sebring"].MatchesPracticeLayout("Sebring International Raceway", 6019), "full Sebring name");
+            Check(byId["sebring"].MatchesPracticeLayout("Sebring International Raceway", 5820) &&
+                byId["sebring"].MatchesPracticeLayout("Sebring - 12H", 5820), "LMU 12H scoring length");
+            Check(!byId["sebring"].MatchesPracticeLayout("Sebring School",5820) &&
+                !byId["sebring"].MatchesPracticeLayout("Sebring",5900), "variant and undocumented length remain excluded");
             Check(!byId["spa"].MatchesPracticeLayout("Spa-Francorchamps (Endurance)", 7004), "Spa timing-line variation");
             Check(byId["portimao"].MatchesPracticeLayout("Autódromo Internacional do Algarve", 4653) &&
                 !byId["portimao"].MatchesPracticeLayout("Portimão (ELMS)", 4653), "accented Portuguese venue and alternate grid");

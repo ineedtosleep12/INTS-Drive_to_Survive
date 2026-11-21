@@ -19,7 +19,13 @@ export function readLd(bytes) {
   const bounds = (offset, count) => assert(Number.isSafeInteger(offset) && Number.isSafeInteger(count) && offset >= 0 && count >= 0 && offset + count <= bytes.length, 'LD pointer or length outside file');
   const text = (offset, count) => { bounds(offset, count); return bytes.subarray(offset, offset + count).toString('latin1').split('\0')[0].trim(); };
   assert(bytes.readUInt32LE(0) === 0x40, 'Not a supported LD file');
-  const header = { date: text(94,16), time: text(126,16), driver: text(158,64), car: text(222,64), track: text(350,64) };
+  // LMU can write UTF-8 into the venue field. Older logs use single-byte
+  // names. Decode UTF-8 only when it round-trips to the exact source bytes.
+  const legacyTrack = text(350,64);
+  const venueBytes = Buffer.from(legacyTrack,'latin1');
+  const utf8Track = venueBytes.toString('utf8');
+  const track = Buffer.from(utf8Track,'utf8').equals(venueBytes) ? utf8Track : legacyTrack;
+  const header = { date: text(94,16), time: text(126,16), driver: text(158,64), car: text(222,64), track };
   const event = bytes.readUInt32LE(36);
   if(event) {
     bounds(event,1154); const venue = bytes.readUInt16LE(event+1152);
