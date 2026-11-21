@@ -76,7 +76,7 @@ namespace IntsLiveCoach
             var guide = new TabPage("원리 배우기 · 게임 없이 보기") { BackColor = Palette.Background, Padding = new Padding(16) };
             var compare = new TabPage("핫랩과 비교") { BackColor = Palette.Background };
             compare.Controls.Add(referencePanel);
-            tabs.TabPages.Add(practice); tabs.TabPages.Add(compare); tabs.TabPages.Add(guide); Controls.Add(tabs); Controls.Add(selectors);
+            tabs.TabPages.Add(practice); tabs.TabPages.Add(compare); tabs.TabPages.Add(BuildCircuitPage()); tabs.TabPages.Add(guide); Controls.Add(tabs); Controls.Add(selectors);
             PrepareTimeline();
             var grid = new TableLayoutPanel { Dock = DockStyle.Top, Height = 650, Padding = new Padding(25, 16, 25, 0), ColumnCount = 1, RowCount = 10 };
             foreach (float height in new float[] { 43, 37, 82, 45, 54, 70, 95, 55, 46, 50 }) grid.RowStyles.Add(new RowStyle(SizeType.Absolute, height));
@@ -108,7 +108,7 @@ namespace IntsLiveCoach
             guide.Controls.Add(lessonText); guide.Controls.Add(lessons); guide.Controls.Add(lessonSource);
             lessons.SelectedIndexChanged += delegate { ShowLesson(); }; lessonSource.LinkClicked += delegate { var item = lessons.SelectedItem as PrincipleLesson; if (item != null && item.SourceUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase)) System.Diagnostics.Process.Start(item.SourceUrl); };
             game.SelectedIndexChanged += delegate { ChangeSource(); };
-            discipline.SelectedIndexChanged += delegate { lock (engineLock) { selectedDiscipline = (DrivingDiscipline)discipline.SelectedIndex; engine.Reset(); principles.Reset(); referenceCoach.Reset(); haveFrames = false; lastCapturedLapCount=0; generation++; lastPrinciple = null; } feedbackUntil = DateTime.MinValue; lastSpokenId="";lastSpokenUtc=DateTime.MinValue;speech.SpeakAsyncCancelAll(); ClearLiveOverlay(); LoadLessons(); RefreshExercises(); UpdateSetup(); };
+            discipline.SelectedIndexChanged += delegate { ClearCoursePractice(); lock (engineLock) { selectedDiscipline = (DrivingDiscipline)discipline.SelectedIndex; engine.Reset(); principles.Reset(); referenceCoach.Reset(); haveFrames = false; lastCapturedLapCount=0; generation++; lastPrinciple = null; } feedbackUntil = DateTime.MinValue; lastSpokenId="";lastSpokenUtc=DateTime.MinValue;speech.SpeakAsyncCancelAll(); ClearLiveOverlay(); LoadLessons(); RefreshExercises(); UpdateSetup(); };
             referencePanel.LiveSettingsChanged += ConfigureReference;
             ConfigureReference(referencePanel.GetLiveSettings());
             LoadLessons();
@@ -117,6 +117,7 @@ namespace IntsLiveCoach
 
         private void ChangeSource()
         {
+            ClearCoursePractice();
             lock (engineLock)
             {
                 generation++; reader.Dispose();
@@ -150,7 +151,7 @@ namespace IntsLiveCoach
                 case 3: instruction = "AC에서 차량에 탑승하면 연결됩니다.\n드리프트는 넓은 평지에서, 레이싱은 상단 연습을 바꿔 시작하세요."; break;
                 case 4: instruction = "EA WRC를 처음 연결할 때는 게임을 종료하고 아래 ‘EA WRC 데이터 전송 켜기’를 누르세요.\n그다음 게임을 실행하고 스테이지에서 주행하세요."; break;
                 case 5: instruction = "Assetto Corsa Rally: 다른 AC 계열 게임을 종료하고 스테이지에서 직접 운전\n랠리 입력·원리 코칭 시험 연결 · 공식 SDK/실제 주행 검증 전"; break;
-                default: instruction = "LMU: Gameplay → Enable Plugins 켜고 게임 재시작\n출발선을 통과한 뒤 완전한 유효 랩을 마치면 다음 랩과 비교합니다."; break;
+                default: instruction = "LMU: Gameplay → Enable Plugins 켜고 게임 재시작\n‘LMU 서킷 훈련’에서 코스와 코너 과제를 고른 뒤 게임에서 달리세요."; break;
             }
             setup.Text = instruction + "\n오버레이는 테두리 없는 창 / 창 모드에서 사용하세요.";
             if(referenceCoachingEnabled&&!string.Equals(selectedGame,referenceGame,StringComparison.OrdinalIgnoreCase))setup.Text+="\n불러온 "+referenceGame+" 기준은 이 게임에 적용하지 않습니다. 기본 원리 코칭을 사용합니다.";
@@ -162,6 +163,7 @@ namespace IntsLiveCoach
         }
         private void ConfigureReference(ReferenceLiveSettings settings)
         {
+            if(!settingCourseBaseline && courseRun.Course!=null){courseRun.Begin(null);RefreshCourseStatus();}
             var selectedReference=settings.Reference;
             lock(engineLock) {referenceCoach.Configure(settings);referenceCoachingEnabled=settings.Enabled&&selectedReference!=null;referenceGame=selectedReference==null?"":selectedReference.Game;generation++;}
             // A changed source or alignment must never leave an old corner cue on screen.
@@ -228,7 +230,7 @@ namespace IntsLiveCoach
                 TelemetryFrame captured = frame; CoachView capturedView = view; CoachPrincipleView capturedPrinciple = principleView; string capturedStatus = status; int capturedGeneration = generation;
                 if (!closing && IsHandleCreated) BeginInvoke((Action)delegate {
                     if(capturedGeneration!=generation)return;
-                    if(completedLap!=null)referencePanel.SetOwnLap(completedLap);
+                    if(completedLap!=null)ReceiveCompletedLap(completedLap);
                     else if(completedLapError.Length>0)referencePanel.SetCaptureError(completedLapError);
                     if(capturedGeneration==generation)Apply(captured,capturedView,capturedPrinciple,capturedStatus,liveReferenceView,exerciseView);
                 });
@@ -261,6 +263,7 @@ namespace IntsLiveCoach
                 action.Text = "";
                 feedbackUntil = DateTime.MinValue;
                 lastPrinciple = null;
+                if (DisplayCourseWait(null)) return;
                 if (activeExercise != null)
                 {
                     CoachPrincipleView report;
@@ -271,6 +274,7 @@ namespace IntsLiveCoach
                 }
                 overlay.UpdateData(null, null, selectedGame + " 주행 데이터 대기", "원리 배우기 탭은 게임 없이도 볼 수 있습니다.", "게임·연결 설정·차량 탑승 상태를 확인하세요."); speech.SpeakAsyncCancelAll(); return;
             }
+            if (DisplayCourseWait(frame)) return;
             if (exerciseView != null) { ApplyExercise(frame, exerciseView); return; }
             if(UseExternalReference && liveReference!=null)
             {
@@ -307,9 +311,9 @@ namespace IntsLiveCoach
 
         private void ApplyReference(TelemetryFrame frame,LiveReferenceView live)
         {
-            export.Enabled=haveFrames;stage.Text=live.Status;
+            export.Enabled=haveFrames;stage.Text=(courseRun.Course==null?"":courseRun.Course.Name+" · 고정한 내 기준 랩 · ")+live.Status;
             bool cue=live.Ready&&!string.IsNullOrEmpty(live.Heading);
-            feedback.Text=cue?live.Heading:live.Ready?"코너 탈출 후 짧게 알려드립니다.":"핫랩 기준 코칭 대기";
+            feedback.Text=cue?live.Heading:live.Ready?"코너 탈출 후 짧게 알려드립니다.":courseRun.Course==null?"기준 주행 코칭 대기":"내 기준 랩 코칭 대기";
             string observation=cue?live.Observation:live.Status;
             string principle=cue?live.Principle:"한 구간의 진입부터 탈출까지 관측한 뒤 비교합니다.";
             string next=cue?live.NextAction:live.Ready?"이번 랩은 평소처럼 달리세요.":"핫랩과 비교 탭에서 기준·이름 연결·탐색 정렬을 확인하세요.";
@@ -379,7 +383,7 @@ namespace IntsLiveCoach
             Draw(g, "INTS  /  LIVE COACH", new Rectangle(14, 9, 245, 20), Palette.Cyan, 9, true);
             Draw(g, passThrough ? "마우스 통과 · Ctrl+Alt+O" : "드래그 이동 · Ctrl+Alt+O 잠금", new Rectangle(250, 9, 238, 20), Palette.Muted, 8, false);
             Draw(g, frame == null ? "— km/h" : CoachWindow.Value(frame.SpeedKph, " km/h") + "   " + (frame.Gear == 0 ? "N" : frame.Gear.ToString()) + "단", new Rectangle(14, 35, 190, 30), Palette.Text, 18, true);
-            string reference = external!=null?(external.Ready?"핫랩 기준 · 근사 비교":"핫랩 기준 연결 대기"):view != null && view.HasReference ? "내 기준 랩 " + view.ReferenceLap : "입력 · 원리 코칭";
+            string reference = external!=null?(external.Ready?"선택한 기준 랩 · 근사 비교":"기준 랩 연결 대기"):view != null && view.HasReference ? "내 기준 랩 " + view.ReferenceLap : "입력 · 원리 코칭";
             Draw(g, skillName ?? reference, new Rectangle(210, 40, 277, 22), Palette.Muted, 10, false);
             double refBrake=external!=null?(external.Ready&&external.ReferenceAtPosition!=null?external.ReferenceAtPosition.Brake:double.NaN):view == null || view.ReferenceAtPosition == null ? double.NaN : view.ReferenceAtPosition.Brake;
             double refThrottle=external!=null?(external.Ready&&external.ReferenceAtPosition!=null?external.ReferenceAtPosition.Throttle:double.NaN):view == null || view.ReferenceAtPosition == null ? double.NaN : view.ReferenceAtPosition.Throttle;
@@ -403,7 +407,7 @@ namespace IntsLiveCoach
             Draw(g, result, new Rectangle(14, 153, 473, 39), Palette.Muted, 9, false);
             Draw(g, (external!=null&&!string.IsNullOrEmpty(external.Heading)?"다음 랩: ":"")+detail, new Rectangle(14, 196, 473, 40), Palette.Lime, 10, false);
             Draw(g, external!=null&&!string.IsNullOrEmpty(external.Principle)?"원리: "+external.Principle:"",new Rectangle(14,240,473,40),Palette.Text,9,false);
-            Draw(g,external!=null?"청록 표시: 불러온 기준 · 정렬·주행 조건의 한계는 비교 탭 참고":"흰 표시: 내 이전 유효 랩 · 다음 코너에서는 조작에 집중하세요.",new Rectangle(14,287,473,18),Palette.Muted,8,false);
+            Draw(g,external!=null?"청록 표시: 선택한 기준 랩 · 주행 조건은 비교 탭에서 확인하세요.":"흰 표시: 내 이전 유효 랩 · 다음 코너에서는 조작에 집중하세요.",new Rectangle(14,287,473,18),Palette.Muted,8,false);
         }
         private static void Draw(Graphics g, string text, Rectangle bounds, Color color, float size, bool bold) { using (var font = new Font("Malgun Gothic", size, bold ? FontStyle.Bold : FontStyle.Regular)) TextRenderer.DrawText(g, text, font, bounds, color, TextFormatFlags.WordBreak | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix); }
         private static void Bar(Graphics g, string label, double value, double reference, int x, Color color,Color markerColor)

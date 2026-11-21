@@ -7,9 +7,22 @@ namespace IntsLiveCoach
 {
     public sealed class ReferenceLibraryEntry
     {
-        public readonly string Path, Title;
+        public readonly string Path, Title, Game, Car, Track;
+        public string CourseLabel { get; private set; }
+        public readonly bool IsCommunityRecording;
         public ReferenceLibraryEntry(string path,ReferenceLap lap)
-        {Path=System.IO.Path.GetFullPath(path);Title=lap.Game+" · "+lap.Car+" · "+lap.Track+" · "+lap.Author+(ReferenceLibrary.ViewOnly(lap)?" [입력 열람 전용]":!lap.HasTime?" [위치·입력 기준 / 시각 없음]":"");}
+        {
+            Path=System.IO.Path.GetFullPath(path);Game=lap.Game;Car=lap.Car;Track=lap.Track;
+            IsCommunityRecording=ReferenceComparison.NeedsNativePositionCheck(lap);
+            string model;
+            string car=lap.Conditions.TryGetValue("sourceCarModel",out model) && !string.IsNullOrWhiteSpace(model)
+                ? model+" / "+lap.Car : lap.Car;
+            string layout=ReferenceLap.Unknown(lap.Layout)?"":" ("+lap.Layout+")";
+            CourseLabel=(string.IsNullOrWhiteSpace(model)?lap.Car:model)+" · "+lap.Track+
+                (layout.Length==0?" (세부 레이아웃 미확인)":layout)+" · "+lap.Author;
+            Title=lap.Game+" · "+car+" · "+lap.Track+layout+" · "+lap.Author+
+                (ReferenceLibrary.ViewOnly(lap)?" [입력 열람 전용]":!lap.HasTime?" [위치·입력 기준 / 시각 없음]":"");
+        }
         public override string ToString() {return Title;}
     }
     public sealed class ReferenceLibraryResult

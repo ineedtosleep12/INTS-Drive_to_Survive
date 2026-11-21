@@ -72,6 +72,19 @@ namespace IntsLiveCoach
             // Extent can qualify an explicitly requested exploration, never establish equivalence or synthesize a track length.
             return first<50&&last<=native.TrackLengthM+5&&native.TrackLengthM-last<=50&&last-first>=native.TrackLengthM*.98;
         }
+        internal static bool NeedsNativePositionCheck(ReferenceLap reference)
+        {
+            string extent;
+            return reference!=null && (reference.DistanceBasis==ReferenceLap.LmuDistanceBasis || reference.DistanceBasis==ReferenceLap.LmuAnchoredDistanceBasis) &&
+                reference.Conditions.TryGetValue("sourceLapExtent",out extent) && extent=="recorded-crossing-to-crossing";
+        }
+        internal static bool NearbyWorldPositions(ReferenceSample a,ReferenceSample b)
+        {
+            if(a==null || b==null || !Finite(a.X) || !Finite(a.Z) || !Finite(b.X) || !Finite(b.Z))return false;
+            // Coarse timing-line/layout check only. This tolerance is not a driving-line target.
+            double dx=a.X-b.X,dz=a.Z-b.Z;
+            return dx*dx+dz*dz<=35*35;
+        }
         public static ComparisonResult Compare(ReferenceLap reference,ReferenceLap own,bool allowVersionMismatch=false,bool allowLmuMotecAlignment=false)
         {
             var output=new ComparisonResult();var warnings=new List<string>();
@@ -86,12 +99,19 @@ namespace IntsLiveCoach
             if(!Known(reference.Layout)||!Known(own.Layout))warnings.Add("레이아웃 정보가 미확인입니다. 같은 코스 변형인지 확인하세요.");
             bool lmuMotecPair=Same(reference.Game,"LMU")&&Pair(reference.DistanceBasis,own.DistanceBasis,ReferenceLap.LmuDistanceBasis,ReferenceLap.LmuMotecDistanceBasis);
             bool mappedLmuMotec=allowLmuMotecAlignment&&lmuMotecPair&&LmuMappingExtent(reference,own);
+            bool anchoredPair=Same(reference.Game,"LMU") && reference.DistanceBasis==ReferenceLap.LmuAnchoredDistanceBasis &&
+                own.DistanceBasis==ReferenceLap.LmuDistanceBasis;
+            bool mappedAnchored=anchoredPair && allowLmuMotecAlignment && NeedsNativePositionCheck(reference) &&
+                reference.CoordinateFrame==ReferenceLap.LmuCoordinateFrame && LmuMappingExtent(reference,own);
+            if(anchoredPair && !mappedAnchored)
+            {output.Reason="후지 기록의 거리는 계측 지점 사이를 속도로 보간했습니다. 전체 코스 범위와 좌표 채널을 확인한 뒤 ‘기록 거리 탐색 정렬’을 선택하세요.";return output;}
             bool accReplayPair=Same(reference.Game,"ACC")&&Pair(reference.DistanceBasis,own.DistanceBasis,CapturedLap.AccDistanceBasis,AccReplayAlignment.SourceDistanceBasis);
             bool mappedAccReplay=allowLmuMotecAlignment&&accReplayPair&&LmuMappingExtent(reference,own,CapturedLap.AccDistanceBasis);
             bool sameReplay=Same(reference.Game,"ACC")&&Same(reference.DistanceBasis,AccReplayAlignment.SourceDistanceBasis)&&Same(reference.DistanceBasis,own.DistanceBasis);
-            if((!Same(reference.DistanceBasis,own.DistanceBasis)||!CourseDistance(reference.DistanceBasis))&&!mappedLmuMotec&&!mappedAccReplay&&!sameReplay)
+            if((!Same(reference.DistanceBasis,own.DistanceBasis)||!CourseDistance(reference.DistanceBasis))&&!mappedLmuMotec&&!mappedAnchored&&!mappedAccReplay&&!sameReplay)
             {output.Reason=accReplayPair?"ACCReplay 거리와 실시간 위치의 대응은 미검증입니다. 코스 98% 이상 범위를 확인한 뒤 탐색 정렬을 선택하세요.":lmuMotecPair?"MoTeC와 공유 메모리의 거리 채널 매핑은 미검증입니다. 트랙 길이가 일치하거나 MoTeC 구간이 공유 메모리 코스의 98% 이상을 포함하는 경우에만 탐색 비교를 명시적으로 선택할 수 있습니다.":"공통 코스 거리 기준이 없습니다. 주행한 누적 거리를 코스 위치로 간주하지 않습니다.";return output;}
             if(mappedAccReplay)warnings.Add("ACCReplay spline 거리와 실시간 코스 위치는 탐색 정렬입니다. 좌표는 별도의 전체 랩 대응 확인 전까지 비교하지 않습니다. 정확한 미터 교정값이 아닙니다.");
+            if(mappedAnchored)warnings.Add("기록 거리 탐색 정렬 · 게임 계측 지점 사이의 속도 적분이 포함된 거리입니다. 같은 지점의 위치·제동·구간 시간에 오차가 있을 수 있습니다.");
             bool hasTime=reference.HasTime&&own.HasTime;
             if(!hasTime)warnings.Add("기준 표본 시각 미제공: 위치·속도·입력만 비교하며 초 단위 손실은 계산하지 않습니다.");
             if(mappedLmuMotec)warnings.Add("MoTeC와 공유 메모리 거리·횡위치 채널의 매핑은 실제 주행 검증 전입니다. 탐색 비교이며 제동 위치·시간 손실·횡위치 차이를 검증된 운전 교정값으로 사용할 수 없습니다.");
@@ -122,6 +142,20 @@ namespace IntsLiveCoach
             double from=Math.Max(reference.Samples[0].DistanceM,own.Samples[0].DistanceM);
             double to=Math.Min(reference.Samples.Last().DistanceM,own.Samples.Last().DistanceM);
             if(to-from<30){output.Reason="겹치는 코스 구간이 30 m보다 짧습니다.";return output;}
+            if(NeedsNativePositionCheck(reference))
+            {
+                double coverage=reference.Samples.Last().DistanceM-reference.Samples[0].DistanceM;
+                if(Finite(own.TrackLengthM) && Math.Abs(own.TrackLengthM-coverage)>Math.Max(60,own.TrackLengthM*.015))
+                {output.Reason="기준 랩이 달린 거리와 현재 레이아웃의 길이가 다릅니다.";return output;}
+                int nearby=0;
+                for(int i=0;i<7;i++)
+                {
+                    double distance=from+(to-from)*i/6;
+                    if(NearbyWorldPositions(SampleAtDistance(reference,distance),SampleAtDistance(own,distance)))nearby++;
+                }
+                if(reference.CoordinateFrame!=ReferenceLap.LmuCoordinateFrame || own.CoordinateFrame!=ReferenceLap.LmuCoordinateFrame || nearby<5)
+                {output.Reason="같은 코스 거리에서 두 차량의 실제 위치를 대응시키지 못했습니다. 레이아웃과 계측선 위치를 확인하세요.";return output;}
+            }
             ReferenceSample r0=SampleAtDistance(reference,from),o0=SampleAtDistance(own,from);
             if(r0==null||o0==null){output.Reason="공통 시작 지점의 시간 표본이 없습니다.";return output;}
             double step=Math.Max(5,(to-from)/12000);var points=new List<ComparisonPoint>();

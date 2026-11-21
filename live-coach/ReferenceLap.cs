@@ -19,6 +19,7 @@ namespace IntsLiveCoach
     public sealed class ReferenceLap
     {
         public const string LmuDistanceBasis="lmu-scoring-distance-m", LmuCoordinateFrame="lmu-world-xz-m";
+        public const string LmuAnchoredDistanceBasis="lmu-scoring-anchored-distance-m";
         public const string LmuLateralBasis="lmu-scoring-path-lateral-m", LmuMotecDistanceBasis="lmu-motec-lap-distance-m", LmuMotecLateralBasis="lmu-motec-path-lateral-m";
         public const int MaximumSamples=100000, MaximumJsonCharacters=32*1024*1024;
         public int SchemaVersion=1;

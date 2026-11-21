@@ -180,6 +180,12 @@ namespace IntsLiveCoach
             {rejectedLap=f.Lap;ClearCorner();previous=null;return new LiveReferenceView {Status="피트·무효·리플레이 랩은 기준 코칭에서 제외합니다."};}
             if(rejectedLap==f.Lap)return new LiveReferenceView {Status="이번 랩 비교 제외 · 다음 유효 랩을 기다립니다."};
             var current=Sample(f);
+            if(ReferenceComparison.NeedsNativePositionCheck(reference) &&
+                !ReferenceComparison.NearbyWorldPositions(ReferenceComparison.SampleAtDistance(reference,current.DistanceM),current))
+            {
+                ClearCorner();previous=null;
+                return new LiveReferenceView {Status="같은 코스 거리의 실제 위치를 확인하는 중 · 레이아웃과 계측선을 확인하세요."};
+            }
             if(previous!=null)
             {
                 double dt=f.Time-previous.Time,ds=f.LapDistance-previous.DistanceM;

@@ -1,6 +1,25 @@
-# INTS Live Coach 0.6.0
+# INTS Live Coach 0.7.0
 
 Windows x64에서 실제 심레이싱 게임의 텔레메트리를 받아 작은 오버레이와 한국어 원리 코칭을 보여 주는 첫 연결 프로토타입입니다. `INTS-Live-Coach.exe`를 실행하면 됩니다. 별도 계정·서버·API 키·패키지 설치는 없습니다. Windows의 .NET Framework 4.x를 사용합니다.
+
+## LMU 서킷 훈련
+
+**LMU 서킷 훈련** 탭에서 코스를 고르면 게임을 켜기 전에도 코너별 과제와 공식 코스 안내를 볼 수 있습니다. 포르쉐 992 영상이 있는 코스에서는 **포르쉐 992 온보드 영상**을 눌러 운전자의 시선에서 진입과 탈출을 확인하세요. 영상 링크는 촬영 당시의 주행을 보여 줍니다. 수치 비교에는 따로 불러온 텔레메트리를 씁니다.
+
+1. **이몰라 → 내 첫 랩으로 연습 시작**을 누릅니다. LMU 연습 세션에서 이몰라 ELMS와 연습할 차량을 선택하세요. 자동으로 켜진 오버레이를 보려면 게임을 테두리 없는 창이나 창 모드로 실행하세요.
+2. 아웃랩을 마치고 출발선을 지난 뒤 한 랩을 유효하게 완주합니다. 그 랩의 차량·레이아웃·계측 거리·게임 빌드를 기준으로 삼습니다. 다음 랩에서 토사 진입의 브레이크 해제처럼 한 가지를 바꿔 보세요. 코너 탈출 후 조건이 맞으면 같은 구간의 시간과 조작 차이를 볼 수 있습니다.
+3. **핫랩과 비교**에서 구간 손실표, 제동 시작·해제, 실측 위치가 있는 두 랩의 주행선을 확인하세요. **고정한 내 기준 랩 저장**으로 첫 랩을 파일에 남겨 다음 실행에서 다시 열 수 있습니다. **다음 서킷**으로 과제를 둘러보고 새 연습을 시작할 때 버튼을 누르세요.
+
+| 연습 순서 | 대표 레이아웃 |
+|---|---|
+| 1–4 | 이몰라 ELMS · 후지 WEC · 실버스톤 WEC · 세브링 WEC |
+| 5–8 | 몬자 WEC · 스파 WEC · 르망 WEC · 포르티망 WEC |
+| 9–14 | 바레인 WEC · 인터라고스 WEC · COTA WEC · 루사일 WEC · 바르셀로나 ELMS · 폴 리카르 ELMS |
+| 15–18 | 데이토나 RC · 로드 애틀랜타 RC · 라구나 세카 RC · 롱비치 GP |
+
+**다른 운전자의 기준**을 쓰려면 서킷 화면에서 해당 차량·레이아웃의 파일을 골라 **이 기록으로 비교 열기**를 누르세요. 공개 묶음의 지네타 LMP3 기록은 이몰라·후지·바레인·바르셀로나·COTA·루사일·폴 리카르 3A에서, 페라리 296 LMGT3 Evo 기록은 실버스톤 인터내셔널에서 측정됐습니다. 폴 리카르 3A와 실버스톤 인터내셔널을 이용할 때는 게임에서도 짧은 레이아웃을 선택하세요. 후지 기록은 계측 사이의 거리를 속도로 보간해 **기록 거리 탐색 정렬**을 켜야 합니다. 이몰라 원본에는 세부 레이아웃명이 없습니다. 공통 위치를 확인할 수 있는 구간에서만 비교합니다. 8개 모두 작성 당시의 주행이며 원본의 랩 카운트만으로 공식 유효 핫랩을 확정할 수 없습니다. [원본·차량·가져오기 방법](LMU-COMMUNITY-SOURCES.md)
+
+**포르쉐 992**를 연습할 때는 포르쉐 파일이나 직접 기록한 포르쉐 랩을 선택하세요. 세브링과 실버스톤 WEC에서도 첫 유효 랩을 고정하면 내 랩끼리 비교할 수 있습니다. 코스 안내의 길이는 공식 대표 레이아웃을 고르는 데 쓰며 제동 지점·구간 손실은 게임이 보내는 코스 거리에서 계산합니다. [LMU 공식 서킷 목록](https://lemansultimate.com/circuits/)
 
 ## 코스를 이어 달리는 라이브 코칭
 
@@ -208,11 +227,13 @@ node --test live-coach/import-motec.test.mjs
 Windows PowerShell에서:
 
 ```powershell
-.\live-coach\build.ps1 -Test
-node --test live-coach/import-motec.test.mjs live-coach/import-acc-motec.test.mjs
+.\live-coach\build.ps1 -Test -Package
+node --test live-coach/import-motec.test.mjs live-coach/import-acc-motec.test.mjs live-coach/import-accreplay.test.mjs
 ```
 
 출력은 `build/live-coach/INTS-Live-Coach.exe`, 합성 데이터 검사기는 `INTS-Coach-Checks.exe`입니다. SDK·NuGet 설치가 필요하지 않습니다. `INTS-Coach-Checks.exe --probe`는 LMU에서 실제 프레임이 수신되는지만 확인하며 게임을 실행하거나 설정을 바꾸지 않습니다. ACR 연결만 확인하려면 `INTS-Coach-Checks.exe --probe acr`을 실행합니다.
+
+`-Package`를 붙이면 같은 폴더에 공개 실행판 ZIP이 생깁니다. 이 묶음에는 `public-references`의 재배포 가능한 커뮤니티 기록만 포함됩니다.
 
 SDK 구조·출처·라이선스·패킷 버전은 함께 제공한 `*NOTICES.txt`를 참고하세요. 게임의 독점 헤더·DLL·자산은 배포하지 않습니다.
 

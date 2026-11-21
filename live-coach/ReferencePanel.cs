@@ -99,7 +99,10 @@ namespace IntsLiveCoach
                 if(initial&&index<0)
                 {
                     for(int i=0;i<library.Items.Count;i++)if(Path.GetFileName(((ReferenceLibraryEntry)library.Items[i]).Path)=="lmu-porsche992-monza-psracing.json")index=i;
-                    if(index<0&&library.Items.Count>0)index=0;
+                    // The public edition includes other car classes. Leave default coaching
+                    // on the driver's own laps until they select a community recording.
+                    for(int i=0;index<0&&i<library.Items.Count;i++)
+                        if(!((ReferenceLibraryEntry)library.Items[i]).IsCommunityRecording)index=i;
                 }
                 library.SelectedIndex=index;
             }
@@ -107,7 +110,13 @@ namespace IntsLiveCoach
             if(initial&&library.SelectedItem is ReferenceLibraryEntry)TrySelectReference(((ReferenceLibraryEntry)library.SelectedItem).Path);
             else Rebuild();
         }
-        void TrySelectReference(string path)
+        public ReferenceLibraryEntry[] EntriesFor(LmuCircuitCourse course)
+        {
+            return library.Items.OfType<ReferenceLibraryEntry>().Where(entry =>
+                string.Equals(entry.Game,"LMU",StringComparison.OrdinalIgnoreCase) && course.MatchesTrackFamily(entry.Track))
+                .OrderByDescending(entry=>entry.Car=="Porsche 911 GT3 R (992)").ToArray();
+        }
+        public bool TrySelectReference(string path)
         {
             ReferenceLap loaded;
             try
@@ -117,12 +126,26 @@ namespace IntsLiveCoach
             catch(Exception ex)
             {
                 MessageBox.Show(this,"기준 주행을 읽지 못했습니다. 기존 기준은 유지합니다.\n"+ex.Message,"INTS");
-                ReloadLibrary(false);return;
+                ReloadLibrary(false);return false;
             }
             changingReference=true;
             try {reference=loaded;referencePath=Path.GetFullPath(path);confirmedIdentity="";confirmedSourceCar=confirmedSourceTrack=confirmedSourceLayout="";versions.Checked=false;alignment.Checked=false;}
             finally {changingReference=false;}
-            ReloadLibrary(false);UpdateLiveContextLabel();SettingsChanged();
+            ReloadLibrary(false);UpdateLiveContextLabel();SettingsChanged();return true;
+        }
+        public void EnableLiveReference() { useLive.Checked=true; }
+        public void SetCourseBaseline(ReferenceLap captured)
+        {
+            changingReference=true;changingLibrary=true;
+            try
+            {
+                reference=captured;own=null;referencePath="";confirmedIdentity="";
+                confirmedSourceCar=confirmedSourceTrack=confirmedSourceLayout="";
+                versions.Checked=false;alignment.Checked=false;useLive.Checked=captured!=null;
+                library.SelectedIndex=-1;
+            }
+            finally {changingLibrary=false;changingReference=false;}
+            Rebuild();SettingsChanged();
         }
         void LoadFile(bool mine)
         {
@@ -217,7 +240,8 @@ namespace IntsLiveCoach
         {
             comparison=ReferenceComparison.Compare(reference,own,versions.Checked,alignment.Checked);save.Enabled=own!=null;useOwn.Enabled=own!=null&&own.Complete&&own.Validity=="valid"&&!ReferenceLibrary.ViewOnly(own);sections.Rows.Clear();brakes.Rows.Clear();
             alignReplay.Enabled=AccReplayAlignment.CanTry(reference,own);
-            alignment.Text=reference!=null&&reference.DistanceBasis==AccReplayAlignment.SourceDistanceBasis?"ACCReplay ↔ 실시간 코스 거리 탐색 정렬 (대응 미검증)":"MoTeC ↔ 실시간 거리·횡위치 탐색 정렬 (실제 게임 데이터 대조 전)";
+            if(reference!=null&&reference.DistanceBasis==ReferenceLap.LmuAnchoredDistanceBasis)alignment.Text="기록 거리 탐색 정렬 (게임 계측 지점 사이를 속도로 보간)";
+            else alignment.Text=reference!=null&&reference.DistanceBasis==AccReplayAlignment.SourceDistanceBasis?"ACCReplay ↔ 실시간 코스 거리 탐색 정렬 (대응 미검증)":"MoTeC ↔ 실시간 거리·횡위치 탐색 정렬 (실제 게임 데이터 대조 전)";
             string title=reference==null?"기준 주행을 열어 주세요.":"기준: "+reference.Game+" · "+reference.Car+" · "+reference.Track+" · "+LapTime(reference)+" ("+reference.Author+")";
             if(libraryErrors>0)title+=" · 라이브러리 읽기 문제 "+libraryErrors+"건 (출처 탭 확인)";
             summary.Text=title+"\n"+(own==null?"내 기록: 출발선을 통과한 뒤 완전한 유효 랩을 마치면 자동 비교합니다.":"내 기록: "+own.Car+" · "+own.Track+" · "+LapTime(own))+"\n"+(comparison.Comparable?(comparison.HasTimeComparison?"구간별 +시간 = 내 손실 · −시간 = 내 이득. 랩 차이 "+Signed(comparison.LapDeltaSeconds," s"):"위치·입력 비교 · 기준 표본 시각이 없어 초 단위 손실은 계산하지 않습니다.")+(alignment.Checked?" · 탐색 정렬 / 검증 전":""):comparison.Reason);
@@ -229,7 +253,7 @@ namespace IntsLiveCoach
             text.AppendLine("기준 라이브러리\n"+libraryNotice+"\n");
             if(ReferenceLibrary.ViewOnly(reference))text.AppendLine("이 파일은 입력 열람 전용입니다. 가로축은 실제 속도 표본을 적분한 이동거리이며 코스 위치가 아닙니다. 조향° 그래프는 원본 각도이며 정규화 입력과 비교하지 않습니다. 원본 시계열은 recordings의 companion 파일에도 보존합니다. 거리 델타·제동 위치·라인 비교·핫랩 오버레이를 활성화하지 않습니다.\n");
             text.AppendLine("실시간 코너 뒤 코칭\n체크박스를 켜면 선택한 파일이 오버레이 기준으로 사용됩니다. 완주할 필요 없이 차량 이름을 연결할 수 있습니다. 이미 진입한 코너의 중간부터 연결되었다면 그 코너는 건너뛰고 완전히 관측한 다음 구간부터 비교합니다.\n다른 서킷도 실제 기준 JSON을 추가하면 같은 방식으로 사용합니다. 목록에 없는 코스의 핫랩이나 라인을 자동 생성하지 않습니다. 파일을 바꾸면 이름 연결과 탐색 정렬 선택을 다시 확인합니다.\n");
-            text.AppendLine("읽는 법\n청록 = 제작자 기준 · 노랑 = 내 기록. 그래프를 클릭하거나 아래 슬라이더를 움직이세요.\n구간 표를 누르면 해당 위치로 이동합니다. ±200 m 확대로 제동 해제와 가속 시점을 확인하세요.\n+시간 차이는 기준보다 더 오래 걸렸다는 뜻입니다. 손실 표는 중복 없는 100 m 구간의 차이를 순서대로 보여 줍니다. 코너 이름 자동 판정이 아닙니다.\n제동 시작은 15% 이상 0.1초, 해제는 8% 이하 0.15초 기준입니다. 작은 위치 차이는 기록 해상도 안으로 표시합니다.\n주행선은 같은 좌표계의 실측 위치만 겹칩니다. 기준선도 세계 최속의 정답이라는 뜻은 아닙니다.\n차이만으로 늦은 제동이 원인이라고 단정하지 마세요. 진입 속도 → 해제 → 최저 속도 → 탈출 가속을 함께 보세요.\n");
+            text.AppendLine("읽는 법\n청록 = 선택한 기준 랩 · 노랑 = 비교할 내 기록. 그래프를 클릭하거나 아래 슬라이더를 움직이세요.\n구간 표를 누르면 해당 위치로 이동합니다. ±200 m 확대로 제동 해제와 가속 시점을 확인하세요.\n+시간 차이는 기준보다 더 오래 걸렸다는 뜻입니다. 손실 표는 중복 없는 100 m 구간의 차이를 순서대로 보여 줍니다. 코너 이름 자동 판정이 아닙니다.\n제동 시작은 15% 이상 0.1초, 해제는 8% 이하 0.15초 기준입니다. 작은 위치 차이는 기록 해상도 안으로 표시합니다.\n주행선은 같은 좌표계의 실측 위치만 겹칩니다. 기준선도 세계 최속의 정답이라는 뜻은 아닙니다.\n차이만으로 늦은 제동이 원인이라고 단정하지 마세요. 진입 속도 → 해제 → 최저 속도 → 탈출 가속을 함께 보세요.\n");
             AppendEvidence(text,"기준 주행",reference);AppendEvidence(text,"내 주행",own);
             text.AppendLine("비교 조건/제한");foreach(string warning in comparison.Warnings)text.AppendLine("• "+warning);
             if(!comparison.Comparable)text.AppendLine(comparison.Reason);
