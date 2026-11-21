@@ -77,6 +77,7 @@ namespace IntsLiveCoach
             var compare = new TabPage("핫랩과 비교") { BackColor = Palette.Background };
             compare.Controls.Add(referencePanel);
             tabs.TabPages.Add(practice); tabs.TabPages.Add(compare); tabs.TabPages.Add(guide); Controls.Add(tabs); Controls.Add(selectors);
+            PrepareTimeline();
             var grid = new TableLayoutPanel { Dock = DockStyle.Top, Height = 650, Padding = new Padding(25, 16, 25, 0), ColumnCount = 1, RowCount = 10 };
             foreach (float height in new float[] { 43, 37, 82, 45, 54, 70, 95, 55, 46, 50 }) grid.RowStyles.Add(new RowStyle(SizeType.Absolute, height));
             practice.Controls.Add(grid);
@@ -220,7 +221,7 @@ namespace IntsLiveCoach
                 }
                 else if (!reader.LastReadTransient || (DateTime.UtcNow - lastFreshUtc).TotalSeconds >= 1.5)
                 {
-                    if (!disconnected) { view = engine.Disconnect("주행 데이터가 멈췄습니다. 연결되면 기준 랩부터 다시 확인합니다."); lastCapturedLapCount=0; principles.Disconnect("주행 데이터 대기"); referenceCoach.Reset(); ResetExerciseObservation(); disconnected = true; }
+                    if (!disconnected) { view = engine.Disconnect("주행 데이터가 멈췄습니다. 연결되면 기준 랩부터 다시 확인합니다."); lastCapturedLapCount=0; principles.Disconnect("주행 데이터 대기"); referenceCoach.Reset(); InterruptExerciseObservation(); disconnected = true; }
                     frame = null;
                 }
                 else return; // A short writer lock/duplicate is not a disconnection.
@@ -235,7 +236,7 @@ namespace IntsLiveCoach
             }
             catch (Exception ex)
             {
-                if (!disconnected) { lock (engineLock) { engine.Disconnect("데이터 읽기 오류로 이번 랩 비교를 중단했습니다."); principles.Disconnect("데이터 읽기 오류"); referenceCoach.Reset(); ResetExerciseObservation(); } disconnected = true; }
+                if (!disconnected) { lock (engineLock) { engine.Disconnect("데이터 읽기 오류로 이번 랩 비교를 중단했습니다."); principles.Disconnect("데이터 읽기 오류"); referenceCoach.Reset(); InterruptExerciseObservation(); } disconnected = true; }
                 int errorGeneration=generation;
                 if (!closing && IsHandleCreated) try { BeginInvoke((Action)delegate { if(errorGeneration==generation)Apply(null, null, null, "연결을 확인하세요: " + ex.GetType().Name); }); } catch (InvalidOperationException) { }
             }
@@ -260,7 +261,14 @@ namespace IntsLiveCoach
                 action.Text = "";
                 feedbackUntil = DateTime.MinValue;
                 lastPrinciple = null;
-                if (activeExercise != null) { ShowExerciseStart(); return; }
+                if (activeExercise != null)
+                {
+                    CoachPrincipleView report;
+                    lock (engineLock) report = RetainedReport();
+                    if (report == null) ShowExerciseStart();
+                    else ApplyExercise(null, report);
+                    return;
+                }
                 overlay.UpdateData(null, null, selectedGame + " 주행 데이터 대기", "원리 배우기 탭은 게임 없이도 볼 수 있습니다.", "게임·연결 설정·차량 탑승 상태를 확인하세요."); speech.SpeakAsyncCancelAll(); return;
             }
             if (exerciseView != null) { ApplyExercise(frame, exerciseView); return; }
@@ -342,7 +350,7 @@ namespace IntsLiveCoach
     internal sealed class OverlayWindow : Form
     {
         private TelemetryFrame frame; private CoachView view; private LiveReferenceView external;
-        private string skillName, skillPrinciple;
+        private string skillName, skillPrinciple, skillProgress;
         private string headline = "주행 데이터 대기", result = "", detail = "조작이 안정된 뒤 짧게 피드백합니다."; private bool passThrough;
         public OverlayWindow()
         {
@@ -356,12 +364,13 @@ namespace IntsLiveCoach
         protected override CreateParams CreateParams { get { var cp = base.CreateParams; cp.ExStyle |= 0x08000000; return cp; } }
         public void SetPassThrough(bool enabled) { passThrough = enabled; if (IsHandleCreated) { long style = Native.GetExStyle(Handle); Native.SetExStyle(Handle, enabled ? style | 0x20L : style & ~0x20L); } Invalidate(); }
         protected override void OnHandleCreated(EventArgs e) { base.OnHandleCreated(e); SetPassThrough(passThrough); }
-        public void UpdateData(TelemetryFrame current, CoachView coach, string heading, string observed, string explanation,LiveReferenceView live=null) { frame = current; view = coach;external=live; skillName=skillPrinciple=null; headline = heading ?? ""; result = observed ?? ""; detail = explanation ?? ""; Invalidate(); }
-        public void UpdateExercise(TelemetryFrame current, string name, string heading, string observed, string next, string principle)
+        public void UpdateData(TelemetryFrame current, CoachView coach, string heading, string observed, string explanation,LiveReferenceView live=null) { frame = current; view = coach;external=live; skillName=skillPrinciple=skillProgress=null; headline = heading ?? ""; result = observed ?? ""; detail = explanation ?? ""; Invalidate(); }
+        public void UpdateExercise(TelemetryFrame current, string name, string heading, string observed, string next, string principle, string progress=null)
         {
             UpdateData(current, null, heading, observed, next);
             skillName = name;
             skillPrinciple = principle;
+            skillProgress = progress;
         }
         protected override void OnPaint(PaintEventArgs e)
         {
@@ -383,7 +392,12 @@ namespace IntsLiveCoach
             {
                 Draw(g, result, new Rectangle(14, 150, 473, 58), Palette.Muted, 9, false);
                 Draw(g, detail, new Rectangle(14, 211, 473, 44), Palette.Lime, 10, true);
-                Draw(g, skillPrinciple, new Rectangle(14, 258, 473, 45), Palette.Text, 9, false);
+                if (!String.IsNullOrEmpty(skillProgress))
+                {
+                    Draw(g, skillPrinciple, new Rectangle(14, 253, 473, 32), Palette.Text, 9, false);
+                    Draw(g, skillProgress, new Rectangle(14, 286, 473, 20), Palette.Cyan, 9, true);
+                }
+                else Draw(g, skillPrinciple, new Rectangle(14, 258, 473, 45), Palette.Text, 9, false);
                 return;
             }
             Draw(g, result, new Rectangle(14, 153, 473, 39), Palette.Muted, 9, false);

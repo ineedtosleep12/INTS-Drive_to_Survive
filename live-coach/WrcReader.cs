@@ -103,7 +103,7 @@ namespace IntsLiveCoach
                 data[36] > 1 || maxGear < 1 || maxGear > 12 || neutral == reverse || (gearIndex != neutral && gearIndex != reverse && (gearIndex < 1 || gearIndex > maxGear))) return false;
             int gear = gearIndex == neutral ? 0 : gearIndex == reverse ? -1 : gearIndex;
             packetId = BitConverter.ToUInt64(data, 0); frameCount = BitConverter.ToUInt64(data, 16);
-            frame = new TelemetryFrame { Time = time, DistanceAgeSeconds = 0, Lap = 0, LapDistance = distance, TrackLength = length,
+            frame = new TelemetryFrame { Time = time, StageElapsedSeconds = stageTime, DistanceAgeSeconds = 0, Lap = 0, LapDistance = distance, TrackLength = length,
                 SpeedKph = speed, Throttle = throttle, Brake = brake, Clutch = clutch, Steering = steer, Handbrake = handbrake, Gear = gear,
                 X = Optional(F32(data, 49), -1e7, 1e7), Y = Optional(F32(data, 53), -1e7, 1e7), Z = Optional(F32(data, 57), -1e7, 1e7),
                 Track = "EA WRC 스테이지 (ID 미제공)", Car = "EA WRC 차량 (ID 미제공)", GameVersion = "EA-WRC-wrc-schema1-data3",

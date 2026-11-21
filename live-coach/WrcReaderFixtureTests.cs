@@ -12,6 +12,7 @@ namespace IntsLiveCoach
             Check(WrcReader.TryDecode(Fixture(), out f, out packet, out count, out status), "current237-byte standard packet");
             Check(packet == 1234 && count == 5678, "64-bit packet/frame counters, not obsolete fourCC");
             Near(f.Time, 100, "game boot timestamp"); Near(f.SpeedKph, 180, "car body speed not wheel speed");
+            Near(f.StageElapsedSeconds, 40, "separate official elapsed stage clock");
             Near(f.Brake, .7, "post-assist brake"); Near(f.Steering, -.25, "negative left input");
             Near(f.Clutch, .2, "clutch"); Near(f.Handbrake, .8, "handbrake"); Near(f.LapDistance, 1234.5, "64-bit stage distance");
             Check(f.Gear == 3 && f.OnTrack && !f.ValidLapKnown && !f.IsValidLap, "no invented valid lap");

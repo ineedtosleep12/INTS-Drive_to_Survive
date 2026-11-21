@@ -12,6 +12,7 @@ namespace IntsLiveCoach
     public sealed class TelemetryFrame
     {
         public double Time = double.NaN;
+        public double StageElapsedSeconds = double.NaN; // Game's stage timer, when supplied.
         public double DistanceAgeSeconds = double.NaN;
         // Host-observed graphics packet freshness, not a game source timestamp
         // or proof of synchronization with a separate physics memory page.
