@@ -231,6 +231,7 @@ namespace IntsLiveCoach
         string IdentityKey(ReferenceLap lap) {return reference==null||lap==null?"":reference.Game+"|"+reference.Car+"|"+reference.Track+"|"+reference.Layout+"|"+lap.Game+"|"+lap.Car+"|"+lap.Track+"|"+lap.Layout;}
         public void SetOwnLap(ReferenceLap lap)
         {
+            if (lap!=null) lap=lap.CopyMetadata();
             if(lap!=null&&reference!=null&&((!string.IsNullOrEmpty(confirmedIdentity)&&confirmedIdentity==IdentityKey(lap))||
                 (confirmedSourceCar.Length>0&&lap.Game==reference.Game&&lap.Car==confirmedSourceCar&&lap.Track==confirmedSourceTrack)))
             {lap.Car=reference.Car;lap.Track=reference.Track;lap.Layout=reference.Layout;lap.Conditions["sourceIdentityMapping"]="Driver confirmed same model/layout labels in this session.";}

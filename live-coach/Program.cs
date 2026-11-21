@@ -33,6 +33,7 @@ namespace IntsLiveCoach
         private readonly Label setup = new Label();
         private readonly ComboBox game = new ComboBox(), discipline = new ComboBox();
         private readonly TabControl tabs = new TabControl();
+        private readonly TabPage brakePracticePage;
         private readonly ReferencePanel referencePanel = new ReferencePanel();
         private int lastCapturedLapCount;
         private bool referenceCoachingEnabled;
@@ -79,7 +80,9 @@ namespace IntsLiveCoach
             var guide = new TabPage("원리 배우기 · 게임 없이 보기") { BackColor = Palette.Background, Padding = new Padding(16) };
             var compare = new TabPage("핫랩과 비교") { BackColor = Palette.Background };
             compare.Controls.Add(referencePanel);
-            tabs.TabPages.Add(practice); tabs.TabPages.Add(compare); tabs.TabPages.Add(BuildCircuitPage()); tabs.TabPages.Add(guide); Controls.Add(tabs); Controls.Add(selectors);
+            tabs.TabPages.Add(practice); tabs.TabPages.Add(compare); tabs.TabPages.Add(BuildCircuitPage()); tabs.TabPages.Add(guide);
+            brakePracticePage = BuildBrakePracticePage(); tabs.TabPages.Add(brakePracticePage);
+            Controls.Add(tabs); Controls.Add(selectors);
             PrepareTimeline();
             var grid = new TableLayoutPanel { Dock = DockStyle.Top, Height = 650, Padding = new Padding(25, 16, 25, 0), ColumnCount = 1, RowCount = 11 };
             foreach (float height in new float[] { 43, 37, 82, 45, 54, 70, 95, 55, 46, 50 }) grid.RowStyles.Add(new RowStyle(SizeType.Absolute, height));
@@ -116,7 +119,7 @@ namespace IntsLiveCoach
             guide.Controls.Add(lessonText); guide.Controls.Add(lessons); guide.Controls.Add(lessonSource);
             lessons.SelectedIndexChanged += delegate { ShowLesson(); }; lessonSource.LinkClicked += delegate { var item = lessons.SelectedItem as PrincipleLesson; if (item != null && item.SourceUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase)) System.Diagnostics.Process.Start(item.SourceUrl); };
             game.SelectedIndexChanged += delegate { ChangeSource(); };
-            discipline.SelectedIndexChanged += delegate { ClearCoursePractice(); lock (engineLock) { selectedDiscipline = (DrivingDiscipline)discipline.SelectedIndex; engine.Reset(); principles.Reset(); referenceCoach.Reset(); haveFrames = false; lastCapturedLapCount=0; generation++; lastPrinciple = null; } feedbackUntil = DateTime.MinValue; lastSpokenId="";lastSpokenUtc=DateTime.MinValue;speech.SpeakAsyncCancelAll(); ClearLiveOverlay(); LoadLessons(); RefreshExercises(); UpdateSetup(); };
+            discipline.SelectedIndexChanged += delegate { ClearBrakePracticeSource(); ClearCoursePractice(); lock (engineLock) { selectedDiscipline = (DrivingDiscipline)discipline.SelectedIndex; engine.Reset(); principles.Reset(); referenceCoach.Reset(); haveFrames = false; lastCapturedLapCount=0; generation++; lastPrinciple = null; } feedbackUntil = DateTime.MinValue; lastSpokenId="";lastSpokenUtc=DateTime.MinValue;speech.SpeakAsyncCancelAll(); ClearLiveOverlay(); LoadLessons(); RefreshExercises(); UpdateSetup(); };
             referencePanel.LiveSettingsChanged += ConfigureReference;
             ConfigureReference(referencePanel.GetLiveSettings());
             LoadLessons();
@@ -125,6 +128,7 @@ namespace IntsLiveCoach
 
         private void ChangeSource()
         {
+            ClearBrakePracticeSource();
             ClearCoursePractice();
             stageRoute.Clear(); stageCar.Clear();
             lock (engineLock)
@@ -139,7 +143,7 @@ namespace IntsLiveCoach
                     case 5: reader = new AcrReader(); break;
                     default: reader = new LmuReader(); break;
                 }
-                selectedGame = gameNames[game.SelectedIndex]; lastTime = double.NaN; lastFreshUtc = DateTime.MinValue; disconnected = true;
+                selectedGame = gameNames[game.SelectedIndex]; lastTime = double.NaN; lastFreshUtc = DateTime.MinValue; disconnected = true; lastBrakeContext = null; latestBrakeCapture = null;
                 engine.Reset(); principles.Reset(); referenceCoach.Reset(); haveFrames = false; lastCapturedLapCount=0; lastPrinciple = null;
             }
             export.Enabled = false; feedbackUntil = DateTime.MinValue; speech.SpeakAsyncCancelAll();
@@ -161,7 +165,7 @@ namespace IntsLiveCoach
                 case 3: instruction = "Skidpad 0.5에서는 ‘원돌이 시작’, Drift Playground 2021에서는 ‘연속 드리프트’를 골라 보세요.\n후륜 모드 차량도 차체 회전·속도·페달이 수신되면 같은 과제를 연습할 수 있습니다."; break;
                 case 4: instruction = "EA WRC를 처음 연결할 때는 게임을 종료하고 아래 ‘EA WRC 데이터 전송 켜기’를 누르세요.\n그다음 게임을 실행하고 스테이지에서 주행하세요."; break;
                 case 5: instruction = "Assetto Corsa Rally: 다른 AC 계열 게임을 종료하고 스테이지에서 직접 운전\n랠리 입력·원리 코칭 시험 연결 · 공식 SDK/실제 주행 검증 전"; break;
-                default: instruction = "LMU의 Gameplay → Enable Plugins를 켜고 게임을 재시작하세요.\n‘LMU 서킷 훈련 → 게임에서 고른 레이아웃’으로 DLC를 포함한 현재 코스에서 내 랩을 비교하세요."; break;
+                default: instruction = "LMU의 Gameplay → Enable Plugins를 켜고 게임을 재시작하세요.\n한 코너의 직전 시도와 비교하려면 ‘브레이크 해제 실험’, 한 바퀴를 복기하려면 ‘LMU 서킷 훈련’을 여세요."; break;
             }
             setup.Text = instruction + "\n오버레이는 테두리 없는 창 / 창 모드에서 사용하세요.";
             if(referenceCoachingEnabled&&!string.Equals(selectedGame,referenceGame,StringComparison.OrdinalIgnoreCase))setup.Text+="\n불러온 "+referenceGame+" 기준은 이 게임에 적용하지 않습니다. 기본 원리 코칭을 사용합니다.";
@@ -208,9 +212,11 @@ namespace IntsLiveCoach
                 CoachPrincipleView exerciseView=null;
                 ReferenceLap completedLap=null;
                 string completedLapError="";
+                bool invalidateBrakeSeed=false;
                 bool fresh = read && frame != null && (!double.IsNaN(frame.Time)) && (frame.Time != lastTime);
                 if (fresh)
                 {
+                    if (selectedGame=="LMU" && selectedDiscipline==DrivingDiscipline.Race) invalidateBrakeSeed=CheckBrakeCaptureContext(frame);
                     lastFreshUtc = DateTime.UtcNow; lastTime = frame.Time; disconnected = false;
                     bool canCompare = selectedDiscipline == DrivingDiscipline.Race && !frame.TimeIsCaptureClock && frame.ValidLapKnown && !double.IsNaN(frame.TrackLength) && !double.IsNaN(frame.LapDistance);
                     if (canCompare)
@@ -219,6 +225,7 @@ namespace IntsLiveCoach
                         if(view.CompletedLaps>0 && view.CompletedLaps!=lastCapturedLapCount)
                         {
                             CapturedLap.TryCreate(selectedGame,engine.GetLatestCompleteLap(),out completedLap,out completedLapError);
+                            if (selectedGame=="LMU") latestBrakeCapture=completedLap;
                         }
                         lastCapturedLapCount=view.CompletedLaps;
                     }
@@ -229,10 +236,12 @@ namespace IntsLiveCoach
                     }
                     principleView = principles.Update(frame, selectedDiscipline); haveFrames = true;
                     exerciseView = ObserveExercise(frame);
+                    ObserveBrakePracticeFrame(frame);
                     if(UseExternalReference)liveReferenceView=referenceCoach.Update(selectedGame,frame);
                 }
                 else if (!reader.LastReadTransient || (DateTime.UtcNow - lastFreshUtc).TotalSeconds >= 1.5)
                 {
+                    invalidateBrakeSeed=!disconnected;
                     if (!disconnected) { view = engine.Disconnect("주행 데이터가 멈췄습니다. 연결되면 기준 랩부터 다시 확인합니다."); lastCapturedLapCount=0; principles.Disconnect("주행 데이터 대기"); referenceCoach.Reset(); InterruptExerciseObservation(); disconnected = true; }
                     frame = null;
                 }
@@ -240,6 +249,7 @@ namespace IntsLiveCoach
                 TelemetryFrame captured = frame; CoachView capturedView = view; CoachPrincipleView capturedPrinciple = principleView; string capturedStatus = status; int capturedGeneration = generation;
                 if (!closing && IsHandleCreated) BeginInvoke((Action)delegate {
                     if(capturedGeneration!=generation)return;
+                    if(invalidateBrakeSeed)InvalidateBrakePracticeSeed();
                     if(completedLap!=null)ReceiveCompletedLap(completedLap);
                     else if(completedLapError.Length>0)referencePanel.SetCaptureError(completedLapError);
                     if(capturedGeneration==generation)Apply(captured,capturedView,capturedPrinciple,capturedStatus,liveReferenceView,exerciseView);
@@ -250,7 +260,7 @@ namespace IntsLiveCoach
             {
                 if (!disconnected) { lock (engineLock) { engine.Disconnect("데이터 읽기 오류로 이번 랩 비교를 중단했습니다."); principles.Disconnect("데이터 읽기 오류"); referenceCoach.Reset(); InterruptExerciseObservation(); } disconnected = true; }
                 int errorGeneration=generation;
-                if (!closing && IsHandleCreated) try { BeginInvoke((Action)delegate { if(errorGeneration==generation)Apply(null, null, null, "연결을 확인하세요: " + ex.GetType().Name); }); } catch (InvalidOperationException) { }
+                if (!closing && IsHandleCreated) try { BeginInvoke((Action)delegate { if(errorGeneration==generation){InvalidateBrakePracticeSeed();Apply(null, null, null, "연결을 확인하세요: " + ex.GetType().Name);} }); } catch (InvalidOperationException) { }
             }
             finally { Interlocked.Exchange(ref polling, 0); }
         }
@@ -264,6 +274,9 @@ namespace IntsLiveCoach
             connection.Text = connected ? "● " + selectedGame + " 데이터 수신 · 게임이 보고한 입력" : "○ " + (string.IsNullOrEmpty(status) ? "선택한 게임을 실행하고 차량에 탑승하세요." : status);
             connection.ForeColor = connected ? Palette.Lime : Palette.Muted;
             if (frame != null) session.Text = frame.Track + "  /  " + frame.Car + "\n" + (frame.Lap >= 0 ? "랩 " + frame.Lap + " · " : "") + Value(frame.SpeedKph, " km/h") + (frame.TimeIsCaptureClock ? " · 수집 시계 사용" : "");
+            else session.Text = "실시간 데이터 없음 · 게임·플러그인·차량 탑승 상태를 확인하세요.";
+            if (tabs.SelectedTab == brakePracticePage) RefreshBrakePractice();
+            if (DisplayBrakePractice(connected ? frame : null)) return;
             if (!connected)
             {
                 stage.Text = "주행 데이터 대기 · 코칭 일시 중단";
@@ -343,7 +356,7 @@ namespace IntsLiveCoach
         private void Export(object sender, EventArgs args)
         {
             using (var dialog = new SaveFileDialog { Filter = "주행 코칭 기록 (*.json)|*.json", FileName = "INTS-" + selectedGame + "-" + DateTime.Now.ToString("yyyyMMdd-HHmmss") + ".json" })
-                if (dialog.ShowDialog(this) == DialogResult.OK) try { string json; lock (engineLock) json = "{\"game\":\"" + selectedGame + "\",\"lapComparison\":" + engine.ExportJson() + ",\"principleCoaching\":" + principles.ExportJson() + ",\"referenceCoaching\":"+referenceCoach.ExportJson()+",\"skillPractice\":"+ExportExercises()+"}"; File.WriteAllText(dialog.FileName, json, new System.Text.UTF8Encoding(false)); } catch (Exception ex) { MessageBox.Show(this, "기록 저장 실패: " + ex.Message); }
+                if (dialog.ShowDialog(this) == DialogResult.OK) try { string json; lock (engineLock) json = "{\"game\":\"" + selectedGame + "\",\"lapComparison\":" + engine.ExportJson() + ",\"principleCoaching\":" + principles.ExportJson() + ",\"referenceCoaching\":"+referenceCoach.ExportJson()+",\"skillPractice\":"+ExportExercises()+",\"brakeReleasePractice\":"+brakeExperiment.ExportJson()+"}"; File.WriteAllText(dialog.FileName, json, new System.Text.UTF8Encoding(false)); } catch (Exception ex) { MessageBox.Show(this, "기록 저장 실패: " + ex.Message); }
         }
         private void ConfigureRunHotkey()
         {

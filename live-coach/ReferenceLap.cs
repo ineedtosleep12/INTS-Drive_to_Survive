@@ -12,6 +12,9 @@ namespace IntsLiveCoach
         public double SpeedKph=double.NaN, Brake=double.NaN, Throttle=double.NaN, Steering=double.NaN;
         public double SteeringDegrees=double.NaN; // Raw source angle for viewing; never normalized by an assumed lock.
         public double X=double.NaN, Z=double.NaN, PathLateralM=double.NaN;
+        // Only the current session can seed an experiment. Preserve its measured
+        // position age and fuel without changing the public lap-file schema.
+        internal double CapturedDistanceAgeSeconds=double.NaN, CapturedFuelLitres=double.NaN;
         public ReferenceSample Copy() { return (ReferenceSample)MemberwiseClone(); }
     }
 
@@ -33,6 +36,13 @@ namespace IntsLiveCoach
         public bool Complete;
         public double TrackLengthM=double.NaN;
         public Dictionary<string,string> Conditions=new Dictionary<string,string>(StringComparer.OrdinalIgnoreCase);
+        // A comparison can map the display labels; another consumer still needs the native identity.
+        internal ReferenceLap CopyMetadata()
+        {
+            var copy=(ReferenceLap)MemberwiseClone();
+            copy.Conditions=new Dictionary<string,string>(Conditions,Conditions.Comparer);
+            return copy;
+        }
         public ReferenceSample[] Samples=new ReferenceSample[0];
 
         internal static bool Finite(double n) { return !double.IsNaN(n)&&!double.IsInfinity(n); }

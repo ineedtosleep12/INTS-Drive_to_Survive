@@ -44,6 +44,7 @@ namespace IntsLiveCoach
         ReferenceLap ownMetadata;
         public int PreparedZoneCount {get{return zones.Count;}}
         public double[] PreparedZoneStarts {get{return zones.Select(z=>z.Start).ToArray();}}
+        internal double[] PreparedZoneEnds {get{return zones.Select(z=>z.End).ToArray();}}
 
         public void Configure(ReferenceLiveSettings settings)
         {

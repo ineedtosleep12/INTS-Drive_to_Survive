@@ -98,7 +98,8 @@ namespace IntsLiveCoach
                     Time = frame.Time - first.Time, DistanceM = frame.LapDistance,
                     SpeedKph = frame.SpeedKph, Brake = frame.Brake, Throttle = frame.Throttle, Steering = frame.Steering,
                     X = position ? frame.X : double.NaN, Z = position ? frame.Z : double.NaN,
-                    PathLateralM = pathLateral
+                    PathLateralM = pathLateral, CapturedDistanceAgeSeconds = frame.DistanceAgeSeconds,
+                    CapturedFuelLitres = frame.FuelLitres
                 };
             }
             var result = new ReferenceLap {

@@ -230,6 +230,7 @@ namespace IntsLiveCoach
 
         private void InterruptExerciseObservation()
         {
+            InterruptBrakePracticeObservation();
             driftCoach.Interrupt(); rallyCoach.Reset();
             if (activeExercise == StageRun)
             {

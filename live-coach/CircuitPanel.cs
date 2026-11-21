@@ -51,6 +51,7 @@ namespace IntsLiveCoach
             var personalRow = new FlowLayoutPanel { WrapContents = false };
             CourseButton(personalRow, new Button(), "내 첫 랩으로 연습 시작", 202, StartCircuitPractice);
             CourseButton(personalRow, saveBaseline, "고정한 내 기준 랩 저장", 201, SaveCircuitBaseline);
+            CourseButton(personalRow, new Button(), "브레이크 해제 실험 열기", 200, delegate { tabs.SelectedTab=brakePracticePage; });
             AddCourseRow(grid, personalRow, 45);
             courseRunStatus.ForeColor = Palette.Muted; AddCourseRow(grid, courseRunStatus, 58);
             circuitLibrary.ForeColor = Palette.Cyan; AddCourseRow(grid, circuitLibrary, 33);
@@ -134,6 +135,7 @@ namespace IntsLiveCoach
         {
             var course = SelectedCircuit;
             if (course == null) return;
+            ClearBrakePracticeSource();
             game.SelectedIndex = 0; discipline.SelectedIndex = 0;
             courseRun.Begin(course);
             lock (engineLock)
@@ -152,6 +154,7 @@ namespace IntsLiveCoach
             if (entry == null) return;
             game.SelectedIndex = 0; discipline.SelectedIndex = 0;
             if (!referencePanel.TrySelectReference(entry.Path)) return;
+            ClearBrakePracticeSource();
             referencePanel.EnableLiveReference();
             tabs.SelectedIndex = 1;
             if (!overlay.Visible) overlay.Show();
@@ -168,6 +171,7 @@ namespace IntsLiveCoach
         }
         void ReceiveCompletedLap(ReferenceLap lap)
         {
+            if (selectedGame=="LMU" && selectedDiscipline==DrivingDiscipline.Race) SetBrakePracticeLap(lap);
             if (courseRun.Course == null) { referencePanel.SetOwnLap(lap); return; }
             bool first = courseRun.Baseline == null;
             if (!courseRun.Record(lap)) return;
