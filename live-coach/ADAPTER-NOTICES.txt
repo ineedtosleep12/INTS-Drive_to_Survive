@@ -56,7 +56,9 @@ world velocity/acceleration onto them yields vehicle-local signals.
 The standard packet has no route/car ID, replay flag, human-control flag or
 valid-stage result. These are not inferred. It must not qualify as a circuit
 reference lap. UDP receive socket binds 127.0.0.1 only; remote datagrams are not
-accepted. No packet is transmitted and no game configuration is modified.
+accepted. The receiver is read-only. The separate EA WRC setup button can
+enable the existing local standard stream after the user selects it. It
+saves a backup of config.json before replacing the file.
 The user's existing SimHub endpoints remain untouched.
 
 Runtime adapters fail closed if their installed schemas do not match these
