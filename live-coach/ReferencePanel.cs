@@ -25,7 +25,7 @@ namespace IntsLiveCoach
         readonly TrackBar cursor = new TrackBar();
         readonly ReferencePlot plot = new ReferencePlot();
         readonly DataGridView sections = Grid(), brakes = Grid();
-        readonly Button save = new Button();
+        readonly Button save = new Button(), useOwn = new Button(), alignReplay = new Button();
         public event Action<ReferenceLiveSettings> LiveSettingsChanged;
         public ReferencePanel()
         {
@@ -42,6 +42,8 @@ namespace IntsLiveCoach
             AddButton(commands,"기준 주행 열기",delegate {LoadFile(false);});
             AddButton(commands,"내 기록 열기",delegate {LoadFile(true);});
             save.Text="내 완주 랩 저장"; Style(save); save.Enabled=false; save.Click+=delegate {SaveOwn();};commands.Controls.Add(save);
+            useOwn.Text="내 완주 랩을 기준으로";Style(useOwn);useOwn.Enabled=false;useOwn.Click+=delegate {UseOwnReference();};commands.Controls.Add(useOwn);
+            alignReplay.Text="내 랩으로 주행선 정렬";Style(alignReplay);alignReplay.Enabled=false;alignReplay.Click+=delegate {AlignReplayCoordinates();};commands.Controls.Add(alignReplay);
             AddButton(commands,"기준 주행 출처",delegate {if(reference!=null)OpenUrl(reference.SourceUrl);});
             AddButton(commands,"제작자 원본 자료",delegate {OpenDownload();});
             AddButton(commands,"차량·코스 이름 연결",delegate {MatchLabels();});
@@ -60,7 +62,7 @@ namespace IntsLiveCoach
             var sources=new TabPage("출처 · 조건 · 읽는 법") {BackColor=Palette.Background};evidence.Dock=DockStyle.Fill;evidence.ReadOnly=true;evidence.BackColor=Palette.Background;evidence.ForeColor=Palette.Text;evidence.BorderStyle=BorderStyle.None;evidence.DetectUrls=false;sources.Controls.Add(evidence);tabs.TabPages.Add(sources);
             cursor.Dock=DockStyle.Fill;cursor.Minimum=0;cursor.Maximum=10000;cursor.TickStyle=TickStyle.None;cursor.ValueChanged+=delegate {RefreshCursor();};rows.Controls.Add(cursor,0,6);
             selection.Dock=DockStyle.Fill;selection.ForeColor=Palette.Cyan;rows.Controls.Add(selection,0,7);
-            sections.Columns.Add("range","구간 · 출발선부터");sections.Columns.Add("loss","이 구간의 시간 차이");sections.Columns.Add("speed","구간 끝 속도 차이");
+            sections.Columns.Add("range","구간 · 출발선부터");sections.Columns.Add("loss","이 구간의 시간 차이");sections.Columns.Add("speed","구간 끝 속도 차이");sections.Columns.Add("line","평균 주행선 간격");
             brakes.Columns.Add("zone","기준 시작 위치");brakes.Columns.Add("start","내 제동 시작");brakes.Columns.Add("release","내 브레이크 해제");brakes.Columns.Add("error","위치 차이 해석");
             sections.CellClick+=delegate(object s,DataGridViewCellEventArgs e) {if(e.RowIndex>=0&&sections.Rows[e.RowIndex].Tag is double)Seek((double)sections.Rows[e.RowIndex].Tag);};
             brakes.CellClick+=delegate(object s,DataGridViewCellEventArgs e) {if(e.RowIndex>=0&&brakes.Rows[e.RowIndex].Tag is double)Seek((double)brakes.Rows[e.RowIndex].Tag);};
@@ -133,6 +135,28 @@ namespace IntsLiveCoach
             using(var d=new SaveFileDialog {Filter="INTS 완주 랩 (*.json)|*.json",FileName="INTS-own-"+DateTime.Now.ToString("yyyyMMdd-HHmmss")+".json"})
                 if(d.ShowDialog(this)==DialogResult.OK)try {File.WriteAllText(d.FileName,own.ToJson(),new UTF8Encoding(false));}catch(Exception ex){MessageBox.Show(this,ex.Message,"INTS 저장 실패");}
         }
+        void UseOwnReference()
+        {
+            if(own==null||!own.Complete||own.Validity!="valid"||ReferenceLibrary.ViewOnly(own))return;
+            // Freeze this lap. Later capture events update own, never this reference.
+            var captured=ReferenceLap.LoadJson(own.ToJson());
+            captured.Car=SourceLabel(captured,"sourceCarLabel",captured.Car);
+            captured.Track=SourceLabel(captured,"sourceTrackLabel",captured.Track);
+            if(captured.Conditions.ContainsKey("sourceIdentityMapping"))captured.Layout="unknown";
+            own=ReferenceLap.LoadJson(captured.ToJson());
+            changingReference=true;
+            try {reference=captured;referencePath="";confirmedIdentity="";confirmedSourceCar=confirmedSourceTrack=confirmedSourceLayout="";versions.Checked=false;alignment.Checked=false;useLive.Checked=true;}
+            finally {changingReference=false;}
+            ReloadLibrary(false);UpdateLiveContextLabel();SettingsChanged();
+        }
+        void AlignReplayCoordinates()
+        {
+            ReferenceLap mapped;string explanation;
+            if(!AccReplayAlignment.TryAlign(reference,own,versions.Checked,alignment.Checked,out mapped,out explanation))
+            {MessageBox.Show(this,explanation,"주행선 좌표 대응 확인");return;}
+            reference=mapped;Rebuild();SettingsChanged();
+            summary.Text+="\n"+explanation;
+        }
         string IdentityKey(ReferenceLap lap) {return reference==null||lap==null?"":reference.Game+"|"+reference.Car+"|"+reference.Track+"|"+reference.Layout+"|"+lap.Game+"|"+lap.Car+"|"+lap.Track+"|"+lap.Layout;}
         public void SetOwnLap(ReferenceLap lap)
         {
@@ -187,17 +211,21 @@ namespace IntsLiveCoach
         {double t=lap.Samples.Last().Time-lap.Samples[0].Time;string recorded;double scored;
             if(lap.Conditions.TryGetValue("recordedLapTimeSeconds",out recorded)&&double.TryParse(recorded,NumberStyles.Float,CultureInfo.InvariantCulture,out scored)&&scored>0)
                 return ((int)scored/60)+":"+(scored%60).ToString("00.000",CultureInfo.InvariantCulture)+(lap.Complete?"":" · 경계 표본 제외");
+            if(!lap.HasTime)return "표본 시각 미제공";
             return (lap.Complete?"완주 ":"부분 ")+((int)t/60)+":"+(t%60).ToString("00.000",CultureInfo.InvariantCulture);}
         void Rebuild()
         {
-            comparison=ReferenceComparison.Compare(reference,own,versions.Checked,alignment.Checked);save.Enabled=own!=null;sections.Rows.Clear();brakes.Rows.Clear();
+            comparison=ReferenceComparison.Compare(reference,own,versions.Checked,alignment.Checked);save.Enabled=own!=null;useOwn.Enabled=own!=null&&own.Complete&&own.Validity=="valid"&&!ReferenceLibrary.ViewOnly(own);sections.Rows.Clear();brakes.Rows.Clear();
+            alignReplay.Enabled=AccReplayAlignment.CanTry(reference,own);
+            alignment.Text=reference!=null&&reference.DistanceBasis==AccReplayAlignment.SourceDistanceBasis?"ACCReplay ↔ 실시간 코스 거리 탐색 정렬 (대응 미검증)":"MoTeC ↔ 실시간 거리·횡위치 탐색 정렬 (실제 게임 데이터 대조 전)";
             string title=reference==null?"기준 주행을 열어 주세요.":"기준: "+reference.Game+" · "+reference.Car+" · "+reference.Track+" · "+LapTime(reference)+" ("+reference.Author+")";
             if(libraryErrors>0)title+=" · 라이브러리 읽기 문제 "+libraryErrors+"건 (출처 탭 확인)";
-            summary.Text=title+"\n"+(own==null?"내 기록: 출발선을 통과한 뒤 완전한 유효 랩을 마치면 자동 비교합니다.":"내 기록: "+own.Car+" · "+own.Track+" · "+LapTime(own))+"\n"+(comparison.Comparable?"구간별 +시간 = 내 손실 · −시간 = 내 이득. 랩 차이 "+Signed(comparison.LapDeltaSeconds," s")+(alignment.Checked?" · 탐색 정렬 / 검증 전":""):comparison.Reason);
+            summary.Text=title+"\n"+(own==null?"내 기록: 출발선을 통과한 뒤 완전한 유효 랩을 마치면 자동 비교합니다.":"내 기록: "+own.Car+" · "+own.Track+" · "+LapTime(own))+"\n"+(comparison.Comparable?(comparison.HasTimeComparison?"구간별 +시간 = 내 손실 · −시간 = 내 이득. 랩 차이 "+Signed(comparison.LapDeltaSeconds," s"):"위치·입력 비교 · 기준 표본 시각이 없어 초 단위 손실은 계산하지 않습니다.")+(alignment.Checked?" · 탐색 정렬 / 검증 전":""):comparison.Reason);
             if(ReferenceLibrary.ViewOnly(reference))summary.Text=title+"\n실제 속도·브레이크·가속 기록을 볼 수 있습니다. 코스 위치와 주행선 채널은 없습니다.\n가로축은 속도 적분 거리이며, 같은 코스 지점 비교나 실시간 기준 코칭에는 사용하지 않습니다.";
-            foreach(var s in comparison.Sections){int row=sections.Rows.Add(s.Name,Signed(s.TimeLossSeconds," s"),Signed(s.ExitSpeedDeltaKph," km/h"));sections.Rows[row].Tag=s.StartDistanceM;}
+            foreach(var s in comparison.Sections){int row=sections.Rows.Add(s.Name,comparison.HasTimeComparison?Signed(s.TimeLossSeconds," s"):"기준 시각 미제공",Signed(s.ExitSpeedDeltaKph," km/h"),comparison.HasLineComparison?N(s.MeanLineOffsetM," m"):"좌표 비교 불가");sections.Rows[row].Tag=s.StartDistanceM;}
             foreach(var b in comparison.BrakeZones){int row=brakes.Rows.Add(N(b.ReferenceStartM," m"),BrakeText(b.StartDeltaM,b.StartDifferenceResolved),BrakeText(b.ReleaseDeltaM,b.ReleaseDifferenceResolved),"추정 불확실성 약 "+N(b.EstimatedUncertaintyM," m"));brakes.Rows[row].Tag=b.ReferenceStartM;}
             var text=new StringBuilder();
+            if(reference!=null&&!reference.HasTime)text.AppendLine("위치 기준 기록\n원본에는 표본별 시각이 없습니다. 랩타임 표기는 제작자 기록의 전체 시간일 뿐, 각 코너의 시간 손실을 계산하는 데 쓰지 않습니다. 거리별 속도·페달·조향 각도와 실제 주행선만 보존했습니다. 조향°는 기준 각도만 표시하며 정규화된 내 입력과 직접 겹치지 않습니다.\nACCReplay의 지도 좌표와 게임 좌표의 관계는 문서로 검증되지 않았습니다. 실제 ACC 유효 완주 랩을 기록하고 ‘내 랩으로 주행선 정렬’을 눌러 전 코스의 축·척도 대응이 확인된 경우에만 두 선을 비교합니다. 임의 이동·회전·크기 맞춤은 하지 않습니다. 이 검사는 원리 설명을 위한 기하학적 대응이며 정렬 정확도의 보증이 아닙니다.\n");
             text.AppendLine("기준 라이브러리\n"+libraryNotice+"\n");
             if(ReferenceLibrary.ViewOnly(reference))text.AppendLine("이 파일은 입력 열람 전용입니다. 가로축은 실제 속도 표본을 적분한 이동거리이며 코스 위치가 아닙니다. 조향° 그래프는 원본 각도이며 정규화 입력과 비교하지 않습니다. 원본 시계열은 recordings의 companion 파일에도 보존합니다. 거리 델타·제동 위치·라인 비교·핫랩 오버레이를 활성화하지 않습니다.\n");
             text.AppendLine("실시간 코너 뒤 코칭\n체크박스를 켜면 선택한 파일이 오버레이 기준으로 사용됩니다. 완주할 필요 없이 차량 이름을 연결할 수 있습니다. 이미 진입한 코너의 중간부터 연결되었다면 그 코너는 건너뛰고 완전히 관측한 다음 구간부터 비교합니다.\n다른 서킷도 실제 기준 JSON을 추가하면 같은 방식으로 사용합니다. 목록에 없는 코스의 핫랩이나 라인을 자동 생성하지 않습니다. 파일을 바꾸면 이름 연결과 탐색 정렬 선택을 다시 확인합니다.\n");
@@ -258,17 +286,17 @@ namespace IntsLiveCoach
             DrawTrace(g,new RectangleF(left,top,right-left,h-7),"km/h",0,speedMax,s=>s.SpeedKph,compare);
             DrawTrace(g,new RectangleF(left,top+h,right-left,h-7),"제동",0,1,s=>s.Brake,compare);
             DrawTrace(g,new RectangleF(left,top+h*2,right-left,h-7),"가속",0,1,s=>s.Throttle,compare);
-            bool rawAngle=ReferenceLibrary.ViewOnly(Reference)&&Reference.Samples.Any(s=>Ok(s.SteeringDegrees));
+            bool rawAngle=Reference.Samples.Any(s=>Ok(s.SteeringDegrees))&&!Reference.Samples.Any(s=>Ok(s.Steering));
             if(rawAngle){double angleMax=Math.Max(10,Math.Ceiling(Reference.Samples.Where(s=>Ok(s.SteeringDegrees)).Max(s=>Math.Abs(s.SteeringDegrees))/10)*10);DrawTrace(g,new RectangleF(left,top+h*3,right-left,h-7),"조향°",-angleMax,angleMax,s=>s.SteeringDegrees,false);}
             else DrawTrace(g,new RectangleF(left,top+h*3,right-left,h-7),"조향",-1,1,s=>s.Steering,compare);
-            var delta=new RectangleF(left,top+h*4,right-left,h-7);Axes(g,delta,"Δ s");
-            if(compare)
+            var delta=new RectangleF(left,top+h*4,right-left,h-7);Axes(g,delta,Reference.HasTime?"Δ s":"시각");
+            if(compare&&Result.HasTimeComparison)
             {
                 double max=Math.Max(1,Result.Points.Where(p=>p.DistanceM>=from&&p.DistanceM<=to).Select(p=>Math.Abs(p.DeltaSeconds)).DefaultIfEmpty(1).Max());
                 DrawPoints(g,delta,Result.Points.Select(p=>new PointF((float)p.DistanceM,(float)p.DeltaSeconds)).ToArray(),-max,max,Palette.Lime,12);
                 TextAt(g,"+"+max.ToString("0.0"),new RectangleF(0,delta.Top,47,18),Palette.Muted);TextAt(g,"−"+max.ToString("0.0"),new RectangleF(0,delta.Bottom-18,47,18),Palette.Muted);
             }
-            else TextAt(g,"내 완주 랩이 들어오면 시간 차이를 표시합니다.",delta,Palette.Muted);
+            else TextAt(g,!Reference.HasTime?"기준 표본 시각 미제공 · 초 단위 손실 계산 안 함":"내 완주 랩이 들어오면 시간 차이를 표시합니다.",delta,Palette.Muted);
             using(var pen=new Pen(Color.FromArgb(130,Palette.Text),1)){float x=left+(float)((CursorM-from)/(to-from))*(right-left);if(x>=left&&x<=right)g.DrawLine(pen,x,top,x,top+h*5-7);}
             TextAt(g,from.ToString("0")+" m",new RectangleF(left,top+h*5,right-left,20),Palette.Muted);TextAt(g,to.ToString("0")+" m",new RectangleF(right-70,top+h*5,75,20),Palette.Muted);
             if(mapWidth>0)DrawMap(g,new RectangleF(right+16,35,mapWidth-24,Height-75),compare);
@@ -289,7 +317,7 @@ namespace IntsLiveCoach
             {
                 double v=value(s);if(s.DistanceM<from||s.DistanceM>to||!Ok(v)){previous=null;last=s;continue;}
                 var at=new PointF(box.Left+(float)((s.DistanceM-from)/(to-from))*box.Width,box.Bottom-(float)((v-min)/(max-min))*box.Height);
-                if(previous.HasValue&&last!=null&&s.Time-last.Time<=1&&s.DistanceM-last.DistanceM<=100)g.DrawLine(p,previous.Value,at);
+                if(previous.HasValue&&last!=null&&(!lap.HasTime||s.Time-last.Time<=1)&&s.DistanceM-last.DistanceM<=100)g.DrawLine(p,previous.Value,at);
                 previous=at;last=s;
             }
             g.Restore(state);
@@ -308,13 +336,13 @@ namespace IntsLiveCoach
             var bounds=samples.Concat(my).ToArray();double minX=bounds.Min(s=>s.X),maxX=bounds.Max(s=>s.X),minZ=bounds.Min(s=>s.Z),maxZ=bounds.Max(s=>s.Z);
             double scale=Math.Min((box.Width-10)/Math.Max(1,maxX-minX),(box.Height-45)/Math.Max(1,maxZ-minZ));
             Func<ReferenceSample,PointF> project=s=>new PointF(box.Left+5+(float)((s.X-minX)*scale),box.Bottom-40-(float)((s.Z-minZ)*scale));
-            MapLine(g,samples,project,Palette.Cyan);MapLine(g,my,project,Palette.Lime);
+            MapLine(g,samples,project,Palette.Cyan,Reference.HasTime);MapLine(g,my,project,Palette.Lime,Own==null||Own.HasTime);
             var r=ReferenceComparison.SampleAtDistance(Reference,CursorM);if(r!=null&&Ok(r.X)){var p=project(r);using(var b=new SolidBrush(Palette.Cyan))g.FillEllipse(b,p.X-4,p.Y-4,8,8);}
             var o=compare&&Result.HasLineComparison?ReferenceComparison.SampleAtDistance(Own,CursorM):null;if(o!=null&&Ok(o.X)){var p=project(o);using(var b=new SolidBrush(Palette.Lime))g.FillEllipse(b,p.X-4,p.Y-4,8,8);}
             TextAt(g,compare&&!Result.HasLineComparison?"내 좌표계 불일치 · 선 비교 보류":"같은 코스 위치에 점 표시\n선택 구간 확대 가능",new RectangleF(box.X,box.Bottom-35,box.Width,40),Palette.Muted);
         }
-        static void MapLine(Graphics g,ReferenceSample[] samples,Func<ReferenceSample,PointF> project,Color color)
-        {using(var p=new Pen(color,1.5f))for(int i=1;i<samples.Length;i++)if(samples[i].Time-samples[i-1].Time<=1&&samples[i].DistanceM-samples[i-1].DistanceM<=100)g.DrawLine(p,project(samples[i-1]),project(samples[i]));}
+        static void MapLine(Graphics g,ReferenceSample[] samples,Func<ReferenceSample,PointF> project,Color color,bool hasTime)
+        {using(var p=new Pen(color,1.5f))for(int i=1;i<samples.Length;i++)if((!hasTime||samples[i].Time-samples[i-1].Time<=1)&&samples[i].DistanceM-samples[i-1].DistanceM<=100)g.DrawLine(p,project(samples[i-1]),project(samples[i]));}
         void DrawLateral(Graphics g,RectangleF box,bool compare)
         {
             TextAt(g,"횡위치 (m) · 근사 중심 경로 기준",new RectangleF(box.X,box.Y,box.Width,42),Palette.Muted);

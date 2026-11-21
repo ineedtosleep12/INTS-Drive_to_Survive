@@ -9,7 +9,8 @@ namespace IntsLiveCoach
     public enum AssettoGame { Ac, Acc }
 
     // Native shared-memory adapter. No DLLs, plugins, process-memory reads,
-    // game controls or network calls. See Assetto-NOTICES.txt for source detail.
+    // game controls. ACC reads localhost Broadcasting track metadata in addition
+    // to shared memory. See Assetto-NOTICES.txt for source detail.
     public sealed class AssettoReader : ITelemetryReader
     {
         internal const int PhysicsBytes = 580; // Common documented prefix only.
@@ -18,16 +19,18 @@ namespace IntsLiveCoach
         internal const int StaticBytes = 592; // Through trackConfiguration.
         private readonly AssettoGame game;
         private readonly Func<string, double> verifiedTrackLength;
+        private readonly AccTrackLengthProvider broadcastLength;
         private readonly Stopwatch clock = Stopwatch.StartNew();
         private readonly AssettoLapClock lapClock = new AssettoLapClock();
+        private readonly AssettoGraphicsObservation graphicsObservation = new AssettoGraphicsObservation();
         private readonly byte[] physics = new byte[PhysicsBytes], physicsCheck = new byte[PhysicsBytes];
         private readonly byte[] statics = new byte[StaticBytes], staticsCheck = new byte[StaticBytes];
         private readonly byte[] graphics, graphicsCheck;
         private MemoryMappedFile pMap, gMap, sMap;
         private MemoryMappedViewAccessor pView, gView, sView;
-        private int processId = -1, previousPhysics, previousGraphics;
-        private bool hasPhysics, hasGraphics, disposed, processAllowed;
-        private double nextConnect, nextProcessCheck, connectedAt, graphicsChangedAt, lastGoodAt = -1;
+        private int processId = -1, previousPhysics;
+        private bool hasPhysics, disposed, processAllowed;
+        private double nextConnect, nextProcessCheck, connectedAt, lastGoodAt = -1;
         private string processStatus = "", waitingStatus = "게임 실행 대기";
 
         public bool LastReadTransient { get; private set; }
@@ -37,7 +40,9 @@ namespace IntsLiveCoach
         {
             if (game != AssettoGame.Ac && game != AssettoGame.Acc) throw new ArgumentOutOfRangeException("game");
             this.game = game;
-            this.verifiedTrackLength = verifiedTrackLength;
+            if (game == AssettoGame.Acc && verifiedTrackLength == null)
+            { broadcastLength = new AccTrackLengthProvider(); this.verifiedTrackLength = broadcastLength.GetLength; }
+            else this.verifiedTrackLength = verifiedTrackLength;
             graphics = new byte[game == AssettoGame.Acc ? AccGraphicsBytes : AcGraphicsBytes];
             graphicsCheck = new byte[graphics.Length];
         }
@@ -55,7 +60,7 @@ namespace IntsLiveCoach
                 processAllowed = CheckGameProcess(game, out found, out processStatus);
                 if (!processAllowed || found != processId)
                 {
-                    ClosePages(); lapClock.Reset(); hasPhysics = hasGraphics = false;
+                    ClosePages(); lapClock.Reset(); hasPhysics = false;
                     processId = found;
                 }
             }
@@ -67,7 +72,7 @@ namespace IntsLiveCoach
                     if (now < nextConnect) { status = waitingStatus; return false; }
                     nextConnect = now + 1;
                     if (!OpenPages(out status)) { waitingStatus = status; return false; }
-                    connectedAt = now; graphicsChangedAt = now; hasGraphics = false;
+                    connectedAt = now; graphicsObservation.Reset();
                 }
 
                 bool stable = false;
@@ -84,11 +89,10 @@ namespace IntsLiveCoach
                 }
                 if (!stable) return Waiting(now, "데이터 갱신 중 · 다음 프레임 대기", out status);
                 int pId = I32(physics, 0), gId = I32(graphics, 0);
-                if (!hasGraphics || gId != previousGraphics)
-                { graphicsChangedAt = now; previousGraphics = gId; hasGraphics = true; }
+                graphicsObservation.Observe(gId, now);
                 if (hasPhysics && pId == previousPhysics)
                     return Waiting(now, "새 물리 프레임 대기 · 일시정지 여부 확인", out status);
-                if (now - graphicsChangedAt > .5)
+                if (graphicsObservation.Age(now) > .5)
                     return Waiting(now, "주행 상태 데이터 갱신 대기", out status);
 
                 string rawTrack = Wide(statics, 134, 33);
@@ -107,11 +111,12 @@ namespace IntsLiveCoach
                 // The pages have no common source timestamp. Unknown is honest;
                 // the core applies its conservative unknown-age margin.
                 frame.DistanceAgeSeconds = double.NaN;
+                graphicsObservation.Apply(frame, now);
                 frame.CaptureUtc = DateTime.UtcNow;
                 previousPhysics = pId; hasPhysics = true;
                 lastGoodAt = now; LastGoodUtc = frame.CaptureUtc;
                 status = game == AssettoGame.Acc
-                    ? (Double.IsNaN(frame.TrackLength) ? "ACC 입력 연결 · 서킷 길이 미제공, m 단위 비교 대기" : "ACC 실시간 연결")
+                    ? (broadcastLength != null ? broadcastLength.Status : Double.IsNaN(frame.TrackLength) ? "ACC 입력 연결 · 서킷 길이 미제공, m 단위 비교 대기" : "ACC 실시간 연결")
                     : "AC 입력 / 거동 연결 · 기본 API에 유효 랩 신호 없음";
                 return true;
             }
@@ -294,6 +299,8 @@ namespace IntsLiveCoach
         }
         private void ClosePages()
         {
+            graphicsObservation.Reset();
+            if (broadcastLength != null) broadcastLength.Reset();
             if (pView != null) { pView.Dispose(); pView = null; }
             if (gView != null) { gView.Dispose(); gView = null; }
             if (sView != null) { sView.Dispose(); sView = null; }
@@ -301,7 +308,30 @@ namespace IntsLiveCoach
             if (gMap != null) { gMap.Dispose(); gMap = null; }
             if (sMap != null) { sMap.Dispose(); sMap = null; }
         }
-        public void Dispose() { if (disposed) return; ClosePages(); disposed = true; }
+        public void Dispose() { if (disposed) return; ClosePages(); if (broadcastLength != null) broadcastLength.Dispose(); disposed = true; }
+    }
+
+    internal sealed class AssettoGraphicsObservation
+    {
+        private bool observed;
+        private int packet;
+        private double changedAt, interval = Double.NaN;
+        internal void Reset() { observed = false; interval = Double.NaN; }
+        internal void Observe(int packetId, double now)
+        {
+            if (Double.IsNaN(now) || Double.IsInfinity(now)) { Reset(); return; }
+            if (!observed || now < changedAt || packetId < packet)
+            { observed = true; packet = packetId; changedAt = now; interval = Double.NaN; return; }
+            if (packetId == packet) return;
+            interval = now - changedAt; changedAt = now; packet = packetId;
+        }
+        internal double Age(double now) { return observed && now >= changedAt ? now - changedAt : Double.NaN; }
+        internal void Apply(TelemetryFrame frame, double now)
+        {
+            // An initial packet proves neither an observed cadence nor source age.
+            frame.DistanceObservationAgeSeconds = Double.IsNaN(interval) ? Double.NaN : Age(now);
+            frame.DistanceObservationIntervalSeconds = interval;
+        }
     }
 
     internal sealed class AssettoLapClock

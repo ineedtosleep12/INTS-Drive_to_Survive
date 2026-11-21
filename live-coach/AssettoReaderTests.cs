@@ -35,6 +35,25 @@ namespace IntsLiveCoach
             Near(frame.Z, 789, "ACC player coordinate third component");
             Check(Decode(AssettoGame.Acc, acc, 5000, out frame, out status), "ACC verified length provider value");
             Near(frame.LapDistance, 1250, "ACC verified metres conversion");
+            byte[][] noPosition = Fixture(AssettoGame.Acc); F32(noPosition[1], 248, Single.NaN);
+            Check(Decode(AssettoGame.Acc,noPosition,5137,out frame,out status)&&Double.IsNaN(frame.LapDistance),"length alone never fabricates course position");
+            Check(Decode(AssettoGame.Acc,acc,Double.PositiveInfinity,out frame,out status)&&Double.IsNaN(frame.TrackLength),"invalid provider length fails closed");
+            Check(Decode(AssettoGame.Acc,acc,5137,out frame,out status)&&frame.X==123&&frame.Y==456&&frame.Z==789,"metadata length does not alter original player world coordinates");
+            var observedGraphics = new AssettoGraphicsObservation();
+            observedGraphics.Observe(20, 10); observedGraphics.Apply(frame,10);
+            Check(Double.IsNaN(frame.DistanceAgeSeconds)&&Double.IsNaN(frame.DistanceObservationAgeSeconds)&&Double.IsNaN(frame.DistanceObservationIntervalSeconds),"first ACC snapshot cannot assert observed cadence or source age");
+            observedGraphics.Observe(21,10.03); observedGraphics.Apply(frame,10.04);
+            Near(frame.DistanceObservationAgeSeconds,.01,"host-observed packet age is separate from source age");
+            Near(frame.DistanceObservationIntervalSeconds,.03,"observed graphics packet interval");
+            Check(Double.IsNaN(frame.DistanceAgeSeconds),"observation never fabricates native source timestamp");
+            observedGraphics.Observe(21,11); observedGraphics.Apply(frame,11);
+            Near(frame.DistanceObservationAgeSeconds,.97,"duplicate graphics packet ages instead of becoming fresh");
+            observedGraphics.Observe(1,11.1); observedGraphics.Apply(frame,11.1);
+            Check(Double.IsNaN(frame.DistanceObservationIntervalSeconds),"packet rollback requires two fresh observations");
+            observedGraphics.Observe(2,11.2); observedGraphics.Observe(3,10); observedGraphics.Apply(frame,10);
+            Check(Double.IsNaN(frame.DistanceObservationIntervalSeconds),"host clock rollback clears cadence");
+            observedGraphics.Reset(); observedGraphics.Apply(frame,12);
+            Check(Double.IsNaN(frame.DistanceObservationAgeSeconds),"disconnect clears observed freshness");
 
             Reject(AssettoGame.Ac, delegate(byte[][] x) { Wide(x[2], 0, 15, "1.8"); }, "reject ACC page under AC selection");
             Reject(AssettoGame.Acc, delegate(byte[][] x) { Wide(x[2], 0, 15, "1.7"); }, "reject AC page under ACC selection");
@@ -86,7 +105,7 @@ namespace IntsLiveCoach
             return checks;
         }
 
-        private static byte[][] Fixture(AssettoGame game)
+        internal static byte[][] Fixture(AssettoGame game)
         {
             byte[] p = new byte[580], g = new byte[game == AssettoGame.Ac ? 296 : 1412], s = new byte[592];
             Wide(s, 0, 15, game == AssettoGame.Ac ? "1.7" : "1.8");

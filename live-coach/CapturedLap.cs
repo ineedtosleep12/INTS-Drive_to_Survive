@@ -118,6 +118,11 @@ namespace IntsLiveCoach
             result.Conditions["sourceTrackLabel"] = first.Track;
             result.Conditions["sourceLapNumber"] = first.Lap.ToString(CultureInfo.InvariantCulture);
             result.Conditions["sourceReader"] = canonicalGame + " live shared-memory reader";
+            if(canonicalGame=="ACC")
+            {
+                result.Conditions["sourceCourseDistance"]="Native normalizedCarPosition multiplied by current-track official Broadcasting v4 TrackMeters; not integrated speed.";
+                result.Conditions["sourcePositionTiming"]="Graphics packet-counter changes are observed using the host clock. The source position timestamp and physics/graphics synchronization remain unknown; observation age is not source age.";
+            }
             result.Conditions["fuelStartLitres"] = Finite(first.FuelLitres) && first.FuelLitres >= 0
                 ? first.FuelLitres.ToString("R", CultureInfo.InvariantCulture) : "unknown";
             result.Conditions["tyreCompound"] = "unknown";

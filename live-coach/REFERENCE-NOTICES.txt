@@ -125,3 +125,62 @@ https://driver61.com/uni/trail-braking/
 https://driver61.com/uni/corner-exit/
 https://driver61.com/uni/grip/
 Actual game driving and final native UI still require user-environment testing.
+
+ACCReplay Nürburgring GP, Porsche 992 GT3 R — spatial reference
+------------------------------------------------------------
+Retrieved 2026-11-21 from public, anonymous page/API responses:
+https://www.accreplay.com/laps/2741955
+https://www.accreplay.com/telemetry/2741955
+https://www.accreplay.com/api/telemetry?lapId=2741955
+https://www.accreplay.com/api/laps/2741955
+https://www.accreplay.com/api/tracks/nurburgring/sections
+The API contracts were read from the public page's served client code.
+No authenticated/private response or paid data pack was accessed.
+
+Driver Fabio Bini, Porsche 992 GT3 R, Nürburgring, Practice lap 16,
+reported lap 1:52.845; replay version 1.10.3-1; recording 2024-10-26
+19:35:34 (original timestamp timezone unspecified). Session temperature
+26/30 C differs from per-lap average 23/27 C; both are preserved. The site
+reports isValid and isValidComputed true. Independent validity is unknown.
+Only necessary public lap metadata is retained, not avatar/account details.
+
+The public payload contains 1200 distance-indexed input values and 1971
+distance-indexed map positions. The chart distance range is approximately
+3.9646..5134.371 m; positions extend to 5137 m. Section fields are named
+splineStart/splineEnd. This supports a spline-distance interpretation, not
+an independently verified identity with native normalizedCarPosition.
+Distance basis is therefore acc-replay-spline-distance-m, not relabelled as
+native ACC distance. Endpoint coverage is not used to invent TrackLengthM.
+
+There are NO absolute sample times. Single-lap deltaT values are all zero;
+they are not elapsed times. All converted sample times remain null and
+timeBasis=unavailable-distance-only. The aggregate lap time is provenance,
+never a basis for uniform-time samples or integrated-speed time-loss claims.
+This reference supports spatial brake/speed/input comparisons, not seconds
+lost in a corner. The source's degree steering remains a separate channel.
+
+Original map X/Y is retained as X/Z fields in a distinct
+acc-replay-map-xy-m frame. It is not declared native world X/Z on import.
+The optional explicit alignment procedure requires a real, complete valid
+native ACC lap and a separately enabled distance exploration. It tests only
+eight signed axis permutations, unit scale and zero translation across
+>=98 percent of the course and >=95 percent of 50 m anchors (at least 60).
+It requires a unique low-residual match (RMS <=12 m; >=95 percent <=20 m;
+all <=35 m; next candidate >=max(60 m,4*best RMS)). These are engineering
+plausibility gates, not accuracy guarantees. Residuals include actual line
+differences. No reference line is translated, stretched or arbitrarily
+rotated to fit a driver's mistakes. A successful correspondence is recorded
+in the in-memory reference's conditions; a failed check keeps line comparison
+disabled. Source files remain unchanged. Actual native driving validation
+is still pending, even when synthetic tests pass.
+
+Raw response SHA-256:
+telemetry cd98712f08bd1d323b2e628a1b5fee93732db5e396703f01c2984c392da8b80f
+details 56fb0515405e6b3cde524a0f4a230c62604ffc0911915bf4600933a2b8ce32ee
+sections f413d8ec2512708eea4d5c6ff6104ea215fb910001cabbc806b03336492bfc7c
+
+Redistribution permission was not established. Raw and converted recordings
+are kept only in the user's personal package, not the public repository or
+public executable ZIP. Public code includes an independent converter and
+source configuration. Download links for replay/ghost did not yield a usable
+file; no replay time axis was recovered or fabricated.

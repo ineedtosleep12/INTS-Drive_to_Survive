@@ -9,7 +9,7 @@ $taskSpeech = Get-ChildItem -LiteralPath $taskSpeechRoot -Filter System.Speech.d
 if (-not $taskSpeech) { throw 'Windows System.Speech assembly not found.' }
 New-Item -ItemType Directory -Path $taskBuild -Force | Out-Null
 $taskCommon = @('/nologo','/utf8output','/optimize+','/platform:x64','/unsafe','/r:System.Core.dll','/r:System.Web.Extensions.dll')
-$taskSources = @('Contracts.cs','LmuReader.cs','AssettoReader.cs','AcrReader.cs','Ams2Reader.cs','WrcReader.cs','CoachEngine.cs','PrincipleCoach.cs','ReferenceLap.cs','ReferenceComparison.cs','CapturedLap.cs','ReferenceLiveSettings.cs','ReferenceLibrary.cs','LiveReferenceCoach.cs') | ForEach-Object { Join-Path $taskRoot $_ }
+$taskSources = @('Contracts.cs','LmuReader.cs','AssettoReader.cs','AccTrackLengthProvider.cs','AcrReader.cs','Ams2Reader.cs','WrcReader.cs','CoachEngine.cs','PrincipleCoach.cs','ReferenceLap.cs','ReferenceComparison.cs','CapturedLap.cs','ReferenceLiveSettings.cs','ReferenceLibrary.cs','AccReplayAlignment.cs','LiveReferenceCoach.cs') | ForEach-Object { Join-Path $taskRoot $_ }
 & $taskCompiler @taskCommon '/target:winexe' '/main:IntsLiveCoach.Program' '/r:System.Drawing.dll' '/r:System.Windows.Forms.dll' ("/r:" + $taskSpeech) ("/out:" + (Join-Path $taskBuild 'INTS-Live-Coach.exe')) @taskSources (Join-Path $taskRoot 'Program.cs') (Join-Path $taskRoot 'ReferencePanel.cs')
 if ($LASTEXITCODE -ne 0) { throw 'Live Coach build failed.' }
 $taskTests = Get-ChildItem -LiteralPath $taskRoot -Filter '*Tests.cs' | Select-Object -ExpandProperty FullName

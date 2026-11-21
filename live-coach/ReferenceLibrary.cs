@@ -9,7 +9,7 @@ namespace IntsLiveCoach
     {
         public readonly string Path, Title;
         public ReferenceLibraryEntry(string path,ReferenceLap lap)
-        {Path=System.IO.Path.GetFullPath(path);Title=lap.Game+" · "+lap.Car+" · "+lap.Track+" · "+lap.Author+(ReferenceLibrary.ViewOnly(lap)?" [입력 열람 전용]":"");}
+        {Path=System.IO.Path.GetFullPath(path);Title=lap.Game+" · "+lap.Car+" · "+lap.Track+" · "+lap.Author+(ReferenceLibrary.ViewOnly(lap)?" [입력 열람 전용]":!lap.HasTime?" [위치·입력 기준 / 시각 없음]":"");}
         public override string ToString() {return Title;}
     }
     public sealed class ReferenceLibraryResult

@@ -94,7 +94,7 @@ namespace IntsLiveCoach
         {
             return new TelemetryFrame { Time=f.Time, LapDistance=f.LapDistance, PathLateralM=f.PathLateralM, TrackLength=f.TrackLength,
                 SpeedKph=f.SpeedKph, Throttle=f.Throttle, Brake=f.Brake, Clutch=f.Clutch, Steering=f.Steering,
-                FuelLitres=f.FuelLitres, DistanceAgeSeconds=f.DistanceAgeSeconds, X=f.X, Y=f.Y, Z=f.Z, YawRate=f.YawRate, LateralG=f.LateralG,
+                FuelLitres=f.FuelLitres, DistanceAgeSeconds=f.DistanceAgeSeconds, DistanceObservationAgeSeconds=f.DistanceObservationAgeSeconds, DistanceObservationIntervalSeconds=f.DistanceObservationIntervalSeconds, X=f.X, Y=f.Y, Z=f.Z, YawRate=f.YawRate, LateralG=f.LateralG,
                 Handbrake=f.Handbrake, LongitudinalG=f.LongitudinalG, LocalVelocityRight=f.LocalVelocityRight, LocalVelocityForward=f.LocalVelocityForward,
                 LocalVelocitySideAbs=f.LocalVelocitySideAbs, TimeIsCaptureClock=f.TimeIsCaptureClock,
                 Lap=f.Lap, Gear=f.Gear, Track=f.Track, Car=f.Car, GameVersion=f.GameVersion,
@@ -339,6 +339,8 @@ namespace IntsLiveCoach
             f.SpeedKph=Blend(a.SpeedKph,b.SpeedKph,t);f.Brake=Blend(a.Brake,b.Brake,t);f.Throttle=Blend(a.Throttle,b.Throttle,t);
             f.Steering=Blend(a.Steering,b.Steering,t);f.Clutch=Blend(a.Clutch,b.Clutch,t);f.FuelLitres=Blend(a.FuelLitres,b.FuelLitres,t);
             f.DistanceAgeSeconds=Blend(a.DistanceAgeSeconds,b.DistanceAgeSeconds,t);
+            f.DistanceObservationAgeSeconds=Math.Max(a.DistanceObservationAgeSeconds,b.DistanceObservationAgeSeconds);
+            f.DistanceObservationIntervalSeconds=Math.Max(a.DistanceObservationIntervalSeconds,b.DistanceObservationIntervalSeconds);
             f.PathLateralM=Blend(a.PathLateralM,b.PathLateralM,t);
             f.X=Blend(a.X,b.X,t);f.Y=Blend(a.Y,b.Y,t);f.Z=Blend(a.Z,b.Z,t);f.YawRate=Blend(a.YawRate,b.YawRate,t);f.LateralG=Blend(a.LateralG,b.LateralG,t);
             return f;
@@ -378,7 +380,7 @@ namespace IntsLiveCoach
         {
             return new { time=Number(f.Time),lap=f.Lap,distanceM=Number(f.LapDistance),speedKph=Number(f.SpeedKph),
                 brake=Number(f.Brake),throttle=Number(f.Throttle),steering=Number(f.Steering),clutch=Number(f.Clutch),
-                fuelLitres=Number(f.FuelLitres),distanceAgeSeconds=Number(f.DistanceAgeSeconds),pathLateralM=Number(f.PathLateralM),x=Number(f.X),y=Number(f.Y),z=Number(f.Z),
+                fuelLitres=Number(f.FuelLitres),distanceAgeSeconds=Number(f.DistanceAgeSeconds),distanceObservationAgeSeconds=Number(f.DistanceObservationAgeSeconds),distanceObservationIntervalSeconds=Number(f.DistanceObservationIntervalSeconds),pathLateralM=Number(f.PathLateralM),x=Number(f.X),y=Number(f.Y),z=Number(f.Z),
                 track=f.Track,car=f.Car,gameVersion=f.GameVersion,trackLengthM=Number(f.TrackLength),
                 gear=f.Gear,validityKnown=f.ValidLapKnown,validLap=f.IsValidLap };
         }

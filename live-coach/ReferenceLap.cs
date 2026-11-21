@@ -22,6 +22,9 @@ namespace IntsLiveCoach
         public const string LmuLateralBasis="lmu-scoring-path-lateral-m", LmuMotecDistanceBasis="lmu-motec-lap-distance-m", LmuMotecLateralBasis="lmu-motec-path-lateral-m";
         public const int MaximumSamples=100000, MaximumJsonCharacters=32*1024*1024;
         public int SchemaVersion=1;
+        public const string RecordedTimeBasis="recorded-time-s",DistanceOnlyTimeBasis="unavailable-distance-only";
+        public string TimeBasis=RecordedTimeBasis;
+        public bool HasTime {get{return TimeBasis==RecordedTimeBasis;}}
         public string Game="",Car="",Track="",Layout="unknown",GameVersion="unknown";
         public string DistanceBasis="",CoordinateFrame="unknown",LateralPositionBasis="unknown";
         public string SourceUrl="",Author="unknown",RecordedAt="unknown",Licence="unknown",Provenance="";
@@ -62,7 +65,7 @@ namespace IntsLiveCoach
             catch(InvalidOperationException ex){throw new FormatException("기준 주행 JSON 구조/깊이를 확인하세요.",ex);}
             if(Numeric(d,"schemaVersion",true)!=1)throw new FormatException("지원하지 않는 기준 주행 스키마입니다.");
             var lap=new ReferenceLap {
-                Game=Text(d,"game",""),Car=Text(d,"car",""),Track=Text(d,"track",""),Layout=Text(d,"layout","unknown"),GameVersion=Text(d,"gameVersion","unknown"),
+                TimeBasis=Text(d,"timeBasis",RecordedTimeBasis),Game=Text(d,"game",""),Car=Text(d,"car",""),Track=Text(d,"track",""),Layout=Text(d,"layout","unknown"),GameVersion=Text(d,"gameVersion","unknown"),
                 TrackLengthM=Numeric(d,"trackLengthM",false),DistanceBasis=Text(d,"distanceBasis",""),CoordinateFrame=Text(d,"coordinateFrame","unknown"),LateralPositionBasis=Text(d,"lateralPositionBasis","unknown"),
                 SourceUrl=Text(d,"sourceUrl",""),Author=Text(d,"author","unknown"),RecordedAt=Text(d,"recordedAt","unknown"),Licence=Text(d,"licence","unknown"),Provenance=Text(d,"provenance",""),
                 Validity=Text(d,"validity","unknown"),Complete=Boolean(d,"complete")};
@@ -82,7 +85,7 @@ namespace IntsLiveCoach
             var samples=new List<ReferenceSample>(source.Length);
             foreach(object item in source)
             {
-                var s=Object(item,"sample");var point=new ReferenceSample {Time=Numeric(s,"time",true),DistanceM=Numeric(s,"distanceM",true),SpeedKph=Numeric(s,"speedKph",false),Brake=Numeric(s,"brake",false),Throttle=Numeric(s,"throttle",false),Steering=Numeric(s,"steering",false),SteeringDegrees=Numeric(s,"steeringDegrees",false),X=Numeric(s,"x",false),Z=Numeric(s,"z",false),PathLateralM=Numeric(s,"pathLateralM",false)};
+                var s=Object(item,"sample");var point=new ReferenceSample {Time=Numeric(s,"time",lap.HasTime),DistanceM=Numeric(s,"distanceM",true),SpeedKph=Numeric(s,"speedKph",false),Brake=Numeric(s,"brake",false),Throttle=Numeric(s,"throttle",false),Steering=Numeric(s,"steering",false),SteeringDegrees=Numeric(s,"steeringDegrees",false),X=Numeric(s,"x",false),Z=Numeric(s,"z",false),PathLateralM=Numeric(s,"pathLateralM",false)};
                 if(samples.Count>0&&point.Time==samples[samples.Count-1].Time)
                 {
                     var previous=samples[samples.Count-1];
@@ -104,6 +107,7 @@ namespace IntsLiveCoach
         public void Validate()
         {
             if(SchemaVersion!=1)throw new FormatException("지원하지 않는 기준 주행 스키마입니다.");
+            if(TimeBasis!=RecordedTimeBasis&&TimeBasis!=DistanceOnlyTimeBasis)throw new FormatException("지원하지 않는 표본 시각 기준입니다.");
             Label(Game,"game",true,128);Label(Car,"car",true,256);Label(Track,"track",true,256);Label(Layout,"layout",false,128);Label(GameVersion,"gameVersion",false,256);
             Label(DistanceBasis,"distanceBasis",true,128);Label(CoordinateFrame,"coordinateFrame",false,256);Label(LateralPositionBasis,"lateralPositionBasis",false,256);Label(SourceUrl,"sourceUrl",false,2048);Label(Author,"author",false,512);
             Label(RecordedAt,"recordedAt",false,128);Label(Licence,"licence",false,2048);Label(Provenance,"provenance",false,4096);
@@ -115,8 +119,8 @@ namespace IntsLiveCoach
             ReferenceSample previous=null;
             foreach(var s in Samples)
             {
-                if(s==null||!Finite(s.Time)||s.Time<0||!Finite(s.DistanceM)||s.DistanceM<0||s.DistanceM>100000)throw new FormatException("시각과 거리 표본을 확인하세요.");
-                if(previous!=null&&(s.Time<=previous.Time||s.DistanceM<previous.DistanceM))throw new FormatException("한 랩 안에서 시각은 증가하고 거리는 감소하지 않아야 합니다.");
+                if(s==null||!Finite(s.DistanceM)||s.DistanceM<0||s.DistanceM>100000||(HasTime?(!Finite(s.Time)||s.Time<0):!double.IsNaN(s.Time)))throw new FormatException("시각과 거리 표본을 확인하세요. 시각 미제공 기록에는 null만 허용합니다.");
+                if(previous!=null&&(HasTime?(s.Time<=previous.Time||s.DistanceM<previous.DistanceM):s.DistanceM<=previous.DistanceM))throw new FormatException("한 랩 안의 시각·거리 순서를 확인하세요.");
                 if(Finite(TrackLengthM)&&s.DistanceM>TrackLengthM+5)throw new FormatException("표본이 명시한 트랙 길이를 벗어납니다.");
                 Optional(s.SpeedKph,0,550,"speedKph");Optional(s.Brake,0,1,"brake");Optional(s.Throttle,0,1,"throttle");Optional(s.Steering,-1,1,"steering");Optional(s.X,-10000000,10000000,"x");Optional(s.Z,-10000000,10000000,"z");
                 Optional(s.PathLateralM,-1000,1000,"pathLateralM");
@@ -133,9 +137,9 @@ namespace IntsLiveCoach
         public string ToJson()
         {
             Validate();var serializer=new JavaScriptSerializer {MaxJsonLength=MaximumJsonCharacters,RecursionLimit=24};
-            return serializer.Serialize(new {schemaVersion=SchemaVersion,game=Game,car=Car,track=Track,layout=Layout,gameVersion=GameVersion,trackLengthM=Number(TrackLengthM),distanceBasis=DistanceBasis,coordinateFrame=CoordinateFrame,lateralPositionBasis=LateralPositionBasis,
+            return serializer.Serialize(new {schemaVersion=SchemaVersion,timeBasis=TimeBasis,game=Game,car=Car,track=Track,layout=Layout,gameVersion=GameVersion,trackLengthM=Number(TrackLengthM),distanceBasis=DistanceBasis,coordinateFrame=CoordinateFrame,lateralPositionBasis=LateralPositionBasis,
                 sourceUrl=SourceUrl,author=Author,recordedAt=RecordedAt,licence=Licence,provenance=Provenance,validity=Validity,complete=Complete,conditions=Conditions,
-                samples=Samples.Select(s=>new {time=s.Time,distanceM=s.DistanceM,speedKph=Number(s.SpeedKph),brake=Number(s.Brake),throttle=Number(s.Throttle),steering=Number(s.Steering),steeringDegrees=Number(s.SteeringDegrees),x=Number(s.X),z=Number(s.Z),pathLateralM=Number(s.PathLateralM)}).ToArray()});
+                samples=Samples.Select(s=>new {time=Number(s.Time),distanceM=s.DistanceM,speedKph=Number(s.SpeedKph),brake=Number(s.Brake),throttle=Number(s.Throttle),steering=Number(s.Steering),steeringDegrees=Number(s.SteeringDegrees),x=Number(s.X),z=Number(s.Z),pathLateralM=Number(s.PathLateralM)}).ToArray()});
         }
     }
 }

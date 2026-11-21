@@ -9,7 +9,10 @@ namespace IntsLiveCoach
     public sealed class LiveReferenceView
     {
         public bool Ready,NewFeedback;
+        public bool UsedObservedGraphicsTiming;
         public string Status="기준 주행 코칭 대기",FeedbackId="",Heading="",Observation="",Principle="",NextAction="",Estimate="",CornerName="";
+        public string LineObservation="";
+        public double MeanAbsoluteLineOffsetM=double.NaN;
         public ReferenceSample ReferenceAtPosition;
         public double StartDistanceM=double.NaN,EndDistanceM=double.NaN,TimeLossSeconds=double.NaN;
         public double EntryLossSeconds=double.NaN,MidLossSeconds=double.NaN,ExitLossSeconds=double.NaN;
@@ -22,7 +25,7 @@ namespace IntsLiveCoach
         sealed class Zone
         {public int Id;public double Start,End,First,Second;public string Name;}
         ReferenceLap reference;
-        bool enabled,allowVersion,allowMapping,compatible;
+        bool enabled,allowVersion,allowMapping,compatible,activeObservedTiming;
         string sourceCar="",sourceTrack="",sourceLayout="",context="",hold="기준 주행을 선택하세요.";
         string[] warnings=new string[0];
         readonly List<Zone> zones=new List<Zone>();
@@ -50,9 +53,23 @@ namespace IntsLiveCoach
         public void Reset()
         {context="";compatible=false;ownMetadata=null;previous=null;lap=rejectedLap=-1;visited.Clear();ClearCorner();hold="기준 주행과 실제 차량·코스를 확인하는 중";}
         void ClearCorner()
-        {active=pendingZone=null;activeSamples.Clear();feedback=null;safeSince=double.NaN;feedbackUntil=0;ownPeak=activeDistanceAge=0;}
+        {active=pendingZone=null;activeSamples.Clear();feedback=null;safeSince=double.NaN;feedbackUntil=0;ownPeak=activeDistanceAge=0;activeObservedTiming=false;}
         static bool Finite(double n){return ReferenceLap.Finite(n);}
         static bool Same(string a,string b){return ReferenceLap.Key(a)==ReferenceLap.Key(b);}
+        static bool DistanceTiming(string game,TelemetryFrame frame,out double margin,out bool observed)
+        {
+            margin=0;observed=false;
+            if(Finite(frame.DistanceAgeSeconds))
+            {margin=frame.DistanceAgeSeconds;return margin>=0&&margin<=.5;}
+            // ACC pages have no shared source timestamp. Observe graphics packet
+            // changes separately; never relabel host observation as source age.
+            double age=frame.DistanceObservationAgeSeconds,interval=frame.DistanceObservationIntervalSeconds;
+            if(!double.IsNaN(frame.DistanceAgeSeconds)||!Same(game,"ACC")||!Finite(age)||age<0||age>.5||!Finite(interval)||interval<=0||interval>.5)return false;
+            observed=true; margin=.5+age+interval;
+            // The extra 0.5 s is a conservative decision margin, not a measured
+            // latency or an upper bound on synchronization error.
+            return true;
+        }
         static string Number(double n){return n.ToString("0.0",CultureInfo.InvariantCulture);}
         static string Delta(double n){return n.ToString("+0.00;-0.00;0.00",CultureInfo.InvariantCulture);}
         static double MaxGap(ReferenceLap lap)
@@ -63,6 +80,7 @@ namespace IntsLiveCoach
         {return Finite(s.Brake)&&Finite(s.Throttle)&&Finite(s.Steering)&&s.Brake<.08&&s.Throttle>=.85&&Math.Abs(s.Steering)<=Math.Max(.06,Math.Min(.12,referencePeak*.4));}
         void BuildZones()
         {
+            if(!reference.HasTime){BuildSpatialZones();return;}
             int begin=-1,candidate=-1,clear=-1;
             double referencePeak=0;
             var raw=new List<Zone>();var samples=reference.Samples;
@@ -107,6 +125,8 @@ namespace IntsLiveCoach
         }
         static string Basis(string game)
         {switch(ReferenceLap.Key(game)){case "lmu":return ReferenceLap.LmuDistanceBasis;case "ams2":return CapturedLap.Ams2DistanceBasis;case "acc":return CapturedLap.AccDistanceBasis;case "ac":return CapturedLap.AcDistanceBasis;default:return "unsupported";}}
+        static string Coordinates(string game)
+        {switch(ReferenceLap.Key(game)){case "lmu":return ReferenceLap.LmuCoordinateFrame;case "ams2":return CapturedLap.Ams2CoordinateFrame;case "acc":return CapturedLap.AccCoordinateFrame;case "ac":return CapturedLap.AcCoordinateFrame;default:return "unknown";}}
         void CheckContext(string game,TelemetryFrame f)
         {
             bool alias=!string.IsNullOrEmpty(sourceCar)&&!string.IsNullOrEmpty(sourceTrack)&&Same(f.Car,sourceCar)&&Same(f.Track,sourceTrack)&&Same(game,reference.Game);
@@ -115,15 +135,15 @@ namespace IntsLiveCoach
             var probe=new ReferenceLap {
                 Game=game,Car=alias?reference.Car:f.Car,Track=alias?reference.Track:f.Track,
                 Layout=alias&&!ReferenceLap.Unknown(sourceLayout)?sourceLayout:"unknown",GameVersion=f.GameVersion,
-                TrackLengthM=f.TrackLength,DistanceBasis=Basis(game),Complete=false,Validity="valid",
-                Samples=reference.Samples.Select(s=>s.Copy()).ToArray(),CoordinateFrame="unknown",LateralPositionBasis="unknown"
+                TimeBasis=reference.TimeBasis,TrackLengthM=f.TrackLength,DistanceBasis=Basis(game),Complete=false,Validity="valid",
+                Samples=reference.Samples.Select(s=>s.Copy()).ToArray(),CoordinateFrame=Coordinates(game),LateralPositionBasis="unknown"
             };
             var check=ReferenceComparison.Compare(reference,probe,allowVersion,allowMapping);
             compatible=check.Comparable;hold=check.Reason;warnings=check.Warnings;ownMetadata=probe;ownMetadata.Samples=new ReferenceSample[0];
             if(compatible&&zones.Count==0){compatible=false;hold="기준 파일에서 완전한 감속·회전 구간을 찾지 못했습니다.";}
         }
         static ReferenceSample Sample(TelemetryFrame f)
-        {return new ReferenceSample {Time=f.Time,DistanceM=f.LapDistance,SpeedKph=f.SpeedKph,Brake=f.Brake,Throttle=f.Throttle,Steering=f.Steering};}
+        {return new ReferenceSample {Time=f.Time,DistanceM=f.LapDistance,SpeedKph=f.SpeedKph,Brake=f.Brake,Throttle=f.Throttle,Steering=f.Steering,X=Finite(f.X)&&Finite(f.Z)?f.X:double.NaN,Z=Finite(f.X)&&Finite(f.Z)?f.Z:double.NaN};}
         bool Safe(TelemetryFrame f)
         {
             double relaxed=Math.Max(.06,Math.Min(.15,ownPeak*.4));
@@ -136,6 +156,8 @@ namespace IntsLiveCoach
             if(feedback!=null&&f!=null&&f.Time<feedbackUntil)
             {
                 v.FeedbackId=feedback.FeedbackId;v.Heading=feedback.Heading;v.Observation=feedback.Observation;v.Principle=feedback.Principle;v.NextAction=feedback.NextAction;v.Estimate=feedback.Estimate;v.CornerName=feedback.CornerName;v.StartDistanceM=feedback.StartDistanceM;v.EndDistanceM=feedback.EndDistanceM;v.TimeLossSeconds=feedback.TimeLossSeconds;v.EntryLossSeconds=feedback.EntryLossSeconds;v.MidLossSeconds=feedback.MidLossSeconds;v.ExitLossSeconds=feedback.ExitLossSeconds;v.NewFeedback=isNew;
+                v.LineObservation=feedback.LineObservation;v.MeanAbsoluteLineOffsetM=feedback.MeanAbsoluteLineOffsetM;
+                v.UsedObservedGraphicsTiming=feedback.UsedObservedGraphicsTiming;
             }
             else v.Estimate=compatible?"표본·주행 조건 차이가 있는 관측 비교입니다. 정확한 교정값이 아닙니다.":"";
             return v;
@@ -145,7 +167,9 @@ namespace IntsLiveCoach
             if(!enabled){hold="기준 주행 오버레이 코칭 꺼짐";compatible=false;return View(null);}
             if(reference==null){hold="실제 기준 주행 파일을 먼저 선택하세요.";compatible=false;return View(null);}
             if(f==null){Reset();hold="실시간 데이터 대기 · 이전 알림을 지웠습니다.";return View(null);}
-            if(!Finite(f.Time)||f.TimeIsCaptureClock||!Finite(f.LapDistance)||!Finite(f.TrackLength)||f.Lap<0||!Finite(f.Brake)||!Finite(f.Throttle)||!Finite(f.Steering)||!Finite(f.SpeedKph)||f.SpeedKph<0||f.SpeedKph>550||f.Brake<0||f.Brake>1||f.Throttle<0||f.Throttle>1||Math.Abs(f.Steering)>1||f.LapDistance<0||f.LapDistance>f.TrackLength||!Finite(f.DistanceAgeSeconds)||f.DistanceAgeSeconds>.5||f.DistanceAgeSeconds<0)
+            double distanceMargin;bool observedTiming;
+            bool timing=DistanceTiming(game,f,out distanceMargin,out observedTiming);
+            if(!Finite(f.Time)||f.TimeIsCaptureClock||!Finite(f.LapDistance)||!Finite(f.TrackLength)||f.Lap<0||!Finite(f.Brake)||!Finite(f.Throttle)||!Finite(f.Steering)||!Finite(f.SpeedKph)||f.SpeedKph<0||f.SpeedKph>550||f.Brake<0||f.Brake>1||f.Throttle<0||f.Throttle>1||Math.Abs(f.Steering)>1||f.LapDistance<0||f.LapDistance>f.TrackLength||!timing)
             {ClearCorner();previous=null;hold="거리·시계·입력 갱신을 확인할 수 없어 코칭 대기";return new LiveReferenceView {Status=hold};}
             string key=(game??"")+"|"+f.Car+"|"+f.Track+"|"+f.GameVersion+"|"+f.TrackLength.ToString("R",CultureInfo.InvariantCulture);
             if(key!=context){Reset();context=key;CheckContext(game,f);}
@@ -174,11 +198,11 @@ namespace IntsLiveCoach
             {
                 var zone=zones.FirstOrDefault(z=>!visited.Contains(z.Id)&&previous!=null&&previous.DistanceM<=z.Start&&current.DistanceM>=z.Start&&current.DistanceM<z.End);
                 if(zone!=null)
-                {feedback=null;pendingZone=null;safeSince=double.NaN;active=zone;ownPeak=activeDistanceAge=0;activeSamples.Clear();activeSamples.Add(previous.Copy());}
+                {feedback=null;pendingZone=null;safeSince=double.NaN;active=zone;ownPeak=activeDistanceAge=0;activeObservedTiming=false;activeSamples.Clear();activeSamples.Add(previous.Copy());}
             }
             if(active!=null)
             {
-                ownPeak=Math.Max(ownPeak,Math.Abs(f.Steering));activeDistanceAge=Math.Max(activeDistanceAge,f.DistanceAgeSeconds);activeSamples.Add(current.Copy());
+                ownPeak=Math.Max(ownPeak,Math.Abs(f.Steering));activeDistanceAge=Math.Max(activeDistanceAge,distanceMargin);activeObservedTiming|=observedTiming;activeSamples.Add(current.Copy());
                 if(activeSamples.Count>4000){visited.Add(active.Id);ClearCorner();}
                 else if(current.DistanceM>=active.End)
                 {
@@ -201,7 +225,41 @@ namespace IntsLiveCoach
             previous=current;return View(f,newFeedback);
         }
         ReferenceLap OwnLap(IList<ReferenceSample> samples)
-        {return new ReferenceLap {Game=ownMetadata.Game,Car=ownMetadata.Car,Track=ownMetadata.Track,Layout=ownMetadata.Layout,GameVersion=ownMetadata.GameVersion,TrackLengthM=ownMetadata.TrackLengthM,DistanceBasis=ownMetadata.DistanceBasis,Validity="valid",Complete=false,Samples=samples.Select(s=>s.Copy()).ToArray()};}
+        {return new ReferenceLap {Game=ownMetadata.Game,Car=ownMetadata.Car,Track=ownMetadata.Track,Layout=ownMetadata.Layout,GameVersion=ownMetadata.GameVersion,TrackLengthM=ownMetadata.TrackLengthM,DistanceBasis=ownMetadata.DistanceBasis,CoordinateFrame=ownMetadata.CoordinateFrame,Validity="valid",Complete=false,Samples=samples.Select(s=>s.Copy()).ToArray()};}
+        static bool ContinuousCoordinates(ReferenceLap data,double start,double end)
+        {
+            ReferenceSample previous=null;
+            foreach(var s in data.Samples.Where(p=>p.DistanceM>=start&&p.DistanceM<=end))
+            {
+                if(previous!=null)
+                {
+                    double dt=s.Time-previous.Time;
+                    if((data.HasTime&&(dt<=0||dt>1))||s.DistanceM-previous.DistanceM>100)return false;
+                    if(Finite(s.X)&&Finite(s.Z)&&Finite(previous.X)&&Finite(previous.Z))
+                    {
+                        double speed=Math.Max(s.SpeedKph,previous.SpeedKph),dx=s.X-previous.X,dz=s.Z-previous.Z;
+                        double permitted=data.HasTime?Math.Max(20,speed/3.6*dt*1.5+5):Math.Max(20,(s.DistanceM-previous.DistanceM)*3+5);
+                        if(!Finite(speed)||Math.Sqrt(dx*dx+dz*dz)>permitted)return false;
+                    }
+                }
+                previous=s;
+            }
+            return previous!=null;
+        }
+        void ObserveLine(LiveReferenceView view,ComparisonResult result,ReferenceLap own,Zone zone)
+        {
+            if(!result.HasLineComparison||!ContinuousCoordinates(reference,zone.Start,zone.End)||!ContinuousCoordinates(own,zone.Start,zone.End))return;
+            var pairs=result.Points.Where(p=>Finite(p.LineOffsetM)&&p.Reference!=null&&p.Own!=null).ToArray();
+            if(pairs.Length<10||pairs.Length<result.Points.Length*.95)return;
+            // A large coordinate discrepancy can be a frame/origin mismatch rather
+            // than a driver's line. No automatic alignment or left/right inference.
+            foreach(var p in pairs)
+            {double dx=p.Own.X-p.Reference.X,dz=p.Own.Z-p.Reference.Z;if(!Finite(dx)||!Finite(dz)||Math.Sqrt(dx*dx+dz*dz)>25)return;}
+            view.MeanAbsoluteLineOffsetM=pairs.Average(p=>Math.Abs(p.LineOffsetM));
+            view.LineObservation="기준 경로와 평균 "+Number(view.MeanAbsoluteLineOffsetM)+" m 차이.";
+            view.Observation+=" "+view.LineObservation;
+            view.Estimate+=" 경로 차이는 같은 코스 위치에서 기준 경로의 접선에 수직인 거리의 절댓값 평균입니다. 실측 좌표만 사용하며 좌우 지시·최속 라인·시간 손실 원인으로 단정하지 않습니다.";
+        }
         double TimeAt(ReferenceLap data,double position)
         {var s=ReferenceComparison.SampleAtDistance(data,position);return s==null?double.NaN:s.Time;}
         static double EndOfBrake(ReferenceLap lap,double start,double end)
@@ -243,6 +301,7 @@ namespace IntsLiveCoach
             if(first==null||last==null)return null;
             own.Samples=(new[]{first}).Concat(own.Samples.Where(s=>s.DistanceM>zone.Start&&s.DistanceM<zone.End)).Concat(new[]{last}).ToArray();
             ComparisonResult result=ReferenceComparison.Compare(reference,own,allowVersion,allowMapping);if(!result.Comparable||result.Points.Length<5)return null;
+            if(!reference.HasTime)return AnalyzeSpatial(zone,own,result,first,last);
             double entry=(TimeAt(own,zone.First)-TimeAt(own,zone.Start))-(TimeAt(reference,zone.First)-TimeAt(reference,zone.Start));
             double middle=(TimeAt(own,zone.Second)-TimeAt(own,zone.First))-(TimeAt(reference,zone.Second)-TimeAt(reference,zone.First));
             double exit=(TimeAt(own,zone.End)-TimeAt(own,zone.Second))-(TimeAt(reference,zone.End)-TimeAt(reference,zone.Second));
@@ -258,6 +317,9 @@ namespace IntsLiveCoach
                 Observation=worst>threshold?phase+" "+Number(zone.Start+((phase=="전반")?0:phase=="중반"?(zone.End-zone.Start)/3:(zone.End-zone.Start)*2/3))+" m 이후에서 약 "+Number(worst)+"초 차이.":"표본 해상도와 조건 차이 안일 수 있습니다.",
                 Principle="기준과 조건이 다르면 같은 입력도 결과가 달라질 수 있어요.",NextAction="다음 랩도 같은 진입 속도로 재현해 보세요.",
                 Estimate="자동 감지한 감속·회전 복합 구간의 전반/중반/후반입니다. 공식 코너·에이펙스 판정이 아닙니다. 작은 시간 차이 판단 기준 약 "+Number(threshold)+"초. 조건을 통제하지 않은 관측입니다. "+string.Join(" ",warnings.Take(6).ToArray())};
+            ObserveLine(v,result,own,zone);
+            v.UsedObservedGraphicsTiming=activeObservedTiming;
+            if(activeObservedTiming)v.Estimate+=" ACC 위치·입력의 공통 원본 시각이 없어 동기 오차는 미확인입니다. PC에서 관측한 그래픽 갱신 간격·경과 시간에 판단 여유 0.5초를 추가했습니다. 이는 측정된 원본 지연이나 오차 상한이 아닙니다.";
             if(loss<=threshold)return v;
             var rEntry=ReferenceComparison.SampleAtDistance(reference,zone.Start);var rExit=ReferenceComparison.SampleAtDistance(reference,zone.End);
             if(rEntry==null||rExit==null||!Finite(rEntry.SpeedKph)||!Finite(rExit.SpeedKph))return v;
@@ -282,7 +344,62 @@ namespace IntsLiveCoach
         public string ExportJson()
         {
             return new JavaScriptSerializer().Serialize(new {schemaVersion=1,enabled=enabled,source=reference==null?null:reference.SourceUrl,game=reference==null?null:reference.Game,car=reference==null?null:reference.Car,track=reference==null?null:reference.Track,allowVersionMismatch=allowVersion,allowMotecAlignment=allowMapping,confirmedSourceCar=sourceCar,confirmedSourceTrack=sourceTrack,preparedZones=zones.Count,
-                events=history.Select(v=>new {id=v.FeedbackId,corner=v.CornerName,startM=v.StartDistanceM,endM=v.EndDistanceM,lossSeconds=v.TimeLossSeconds,firstThirdLoss=v.EntryLossSeconds,middleThirdLoss=v.MidLossSeconds,lastThirdLoss=v.ExitLossSeconds,observation=v.Observation,principle=v.Principle,nextAction=v.NextAction,limits=v.Estimate}).ToArray()});
+                events=history.Select(v=>new {id=v.FeedbackId,corner=v.CornerName,startM=v.StartDistanceM,endM=v.EndDistanceM,lossSeconds=JsonNumber(v.TimeLossSeconds),firstThirdLoss=JsonNumber(v.EntryLossSeconds),middleThirdLoss=JsonNumber(v.MidLossSeconds),lastThirdLoss=JsonNumber(v.ExitLossSeconds),observation=v.Observation,lineObservation=v.LineObservation,meanAbsoluteLineOffsetM=JsonNumber(v.MeanAbsoluteLineOffsetM),usedObservedGraphicsTiming=v.UsedObservedGraphicsTiming,principle=v.Principle,nextAction=v.NextAction,limits=v.Estimate}).ToArray()});
+        }
+        static object JsonNumber(double value){return Finite(value)?(object)value:null;}
+        static double Magnitude(ReferenceSample s){return Finite(s.Steering)?Math.Abs(s.Steering):Math.Abs(s.SteeringDegrees);}
+        void BuildSpatialZones()
+        {
+            var raw=new List<Zone>();var samples=reference.Samples;int begin=-1,candidate=-1,clear=-1;double peak=0;
+            for(int i=0;i<samples.Length;i++)
+            {
+                var s=samples[i];double magnitude=Magnitude(s);bool normalized=Finite(s.Steering);
+                if(i>0&&s.DistanceM-samples[i-1].DistanceM>100){begin=candidate=clear=-1;continue;}
+                bool turning=s.Brake>=.15||(Finite(magnitude)&&magnitude>=(normalized?.05:12)&&s.Throttle<.8);
+                if(begin<0)
+                {
+                    if(turning){if(candidate<0)candidate=i;if(i>candidate&&s.DistanceM-samples[candidate].DistanceM>=(s.Brake>=.15?5:15)){begin=candidate;clear=-1;peak=Finite(magnitude)?magnitude:0;}}
+                    else candidate=-1;
+                }
+                else
+                {
+                    if(Finite(magnitude))peak=Math.Max(peak,magnitude);
+                    if(s.DistanceM-samples[begin].DistanceM>1200){begin=candidate=clear=-1;continue;}
+                    bool straight=Finite(magnitude)&&magnitude<=Math.Max(normalized?.06:3,Math.Min(normalized?.12:30,peak*.4));
+                    if(s.Brake<.08&&s.Throttle>=.85&&straight&&s.DistanceM-samples[begin].DistanceM>50)
+                    {
+                        if(clear<0)clear=i;
+                        if(s.DistanceM-samples[clear].DistanceM>=25){raw.Add(new Zone {Start=Math.Max(samples[0].DistanceM,samples[begin].DistanceM-100),End=s.DistanceM});begin=candidate=clear=-1;}
+                    }
+                    else clear=-1;
+                }
+            }
+            foreach(var z in raw){if(zones.Count>0&&z.Start<=zones.Last().End+25)zones.Last().End=z.End;else zones.Add(z);}
+            for(int i=0;i<zones.Count;i++){var z=zones[i];z.Id=i;z.Name="감속·회전 구간 "+(i+1);z.First=z.Start+(z.End-z.Start)/3;z.Second=z.Start+(z.End-z.Start)*2/3;}
+        }
+        LiveReferenceView AnalyzeSpatial(Zone zone,ReferenceLap own,ComparisonResult result,ReferenceSample first,ReferenceSample last)
+        {
+            var a=ReferenceComparison.SampleAtDistance(reference,zone.Start);var b=ReferenceComparison.SampleAtDistance(reference,zone.End);
+            if(a==null||b==null||!Finite(a.SpeedKph)||!Finite(b.SpeedKph))return null;
+            double entry=first.SpeedKph-a.SpeedKph,exit=last.SpeedKph-b.SpeedKph;
+            var v=new LiveReferenceView {Ready=true,FeedbackId=lap+":"+zone.Id,CornerName=zone.Name,StartDistanceM=zone.Start,EndDistanceM=zone.End,UsedObservedGraphicsTiming=activeObservedTiming,
+                Heading=zone.Name+" · 위치·입력 비교",Observation="진입 "+Number(entry)+" / 탈출 "+Number(exit)+" km/h 차이.",
+                NextAction="진입 속도를 유지하며 제동 해제와 출구를 다시 확인하세요.",Principle="같은 위치의 입력 차이도 속도와 노면 조건을 함께 봐야 해요.",
+                Estimate="기준 표본 시각이 없어 초 단위 손실을 계산하지 않습니다. 코스 거리 탐색 정렬이며 조향 각도와 정규화 입력은 직접 비교하지 않습니다. "+string.Join(" ",warnings.Take(4).ToArray())};
+            if(activeObservedTiming)v.Estimate+=" 원본 위치·입력 동기화는 미확인입니다. 관측된 갱신 간격에 보수적인 판단 여유를 추가했습니다.";
+            var brake=result.BrakeZones.FirstOrDefault();
+            double tolerance=Math.Max(15,Math.Max(a.SpeedKph,first.SpeedKph)/3.6*(activeDistanceAge+.1));
+            if(brake!=null)
+            {
+                tolerance=Math.Max(tolerance,brake.EstimatedUncertaintyM);
+                if(Math.Abs(brake.StartDeltaM)>tolerance)v.Observation+=" 제동 시작은 약 "+Number(Math.Abs(brake.StartDeltaM))+" m "+(brake.StartDeltaM>0?"뒤.":"앞.");
+                if(Finite(brake.ReleaseDeltaM)&&Math.Abs(brake.ReleaseDeltaM)>tolerance)v.Observation+=" 해제는 약 "+Number(Math.Abs(brake.ReleaseDeltaM))+" m "+(brake.ReleaseDeltaM>0?"뒤.":"앞.");
+            }
+            if(Math.Abs(entry)>Math.Max(5,a.SpeedKph*.04))
+            {v.NextAction="제동과 조향을 함께 바꾸지 말고 진입 속도부터 맞춰 보세요.";v.Principle="진입 속도가 다르면 필요한 감속량과 회전 여유도 달라져요.";}
+            else if(brake!=null&&brake.ReleaseDeltaM>tolerance&&exit< -4)
+            {v.NextAction="진입 속도는 유지하고 브레이크 해제를 조금 앞당겨 부드럽게 시험하세요.";v.Principle="제동과 회전은 접지를 나눠 쓰고, 해제는 차 균형에도 영향을 줘요.";}
+            ObserveLine(v,result,own,zone);return v;
         }
     }
 }

@@ -1,0 +1,13 @@
+{
+  "game": "ACC",
+  "lapId": 2741955,
+  "sourceUrl": "https://www.accreplay.com/laps/2741955",
+  "expectedCar": "Porsche 992 GT3 R",
+  "expectedTrack": "nurburgring",
+  "expectedVersion": "1.10.3-1",
+  "expectedDriver": "Fabio Bini",
+  "expectedLapTime": "01:52.845",
+  "units": {"speed": "km/h", "pedals": "percent", "steering": "degrees"},
+  "telemetrySha256": "cd98712f08bd1d323b2e628a1b5fee93732db5e396703f01c2984c392da8b80f",
+  "detailsSha256": "56fb0515405e6b3cde524a0f4a230c62604ffc0911915bf4600933a2b8ce32ee"
+}

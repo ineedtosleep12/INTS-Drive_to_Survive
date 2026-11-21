@@ -68,10 +68,18 @@ Runtime compatibility and limits
   is not claimed. DistanceAgeSeconds remains unknown, not a fabricated zero.
 - AC provides native track spline length. On playground/mod maps it may be
   absent; live controls still work without making up a metre scale.
-- ACC marks native trackSplineLength unused. Default ACC TrackLength and
-  LapDistance stay NaN. An optional verified-length provider is an explicit
-  integration hook; this adapter has no guessed circuit-length table and
-  does not configure or connect ACC Broadcasting.
+- ACC marks native trackSplineLength unused. The default reader now opens
+  a read-only localhost Broadcasting v4 subscription using the existing
+  Documents/Assetto Corsa Competizione/Config/broadcasting.json. No setting
+  is changed and no camera, replay or game-control command is sent. It uses
+  current TrackData.TrackMeters only for the registered connection, exact
+  shared-memory track name and a response no older than three seconds.
+  LapDistance is native normalizedCarPosition multiplied by that length.
+  Missing/failed metadata leaves length/distance NaN. No guessed length table.
+- Source distance age remains NaN. Graphics packet-counter changes observed
+  on the host provide separate observation age/interval fields, not a source
+  timestamp or physics/graphics synchronization proof. Two distinct packets
+  are required after reset. Frozen/old observations block live reference cues.
 - AC base shared memory has no authoritative current-lap-validity flag.
   ValidLapKnown remains false. ACC uses its explicit graphics isValidLap.
 - Gear conversion: native 0 reverse, 1 neutral, 2 first -> -1,0,1.
@@ -92,7 +100,16 @@ Runtime compatibility and limits
 
 Setup: choose AC or ACC in the coach, run only that game, enter a driving
 session, and use windowed/borderless mode for the desktop overlay. No app
-must be enabled inside AC, no plugin copied, no UDP settings changed.
+must be enabled inside AC and no plugin is copied. ACC distance comparison
+requires the user's existing Broadcasting configuration. Passwords are read
+only for the localhost registration and never included in logs/exports.
+
+Official Broadcasting source inspected locally, 2026-11-21:
+Assetto Corsa Competizione Dedicated Server/sdk/broadcasting/Sources/
+ksBroadcastingNetwork/BroadcastingNetworkProtocol.cs (protocol version 4)
+SHA-256 C1BC7C8B87D899F47DC41D2DCB990A52E5CF64506DD4585450BDE0ED06A56F06
+Only protocol field facts were used for the independent minimal client.
+The proprietary SDK source and user configuration are not redistributed.
 
 Validation status: synthetic byte and clock fixtures only. No running AC or
 ACC driving session was used to certify this integration during development.

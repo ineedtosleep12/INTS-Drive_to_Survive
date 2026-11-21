@@ -13,6 +13,10 @@ namespace IntsLiveCoach
     {
         public double Time = double.NaN;
         public double DistanceAgeSeconds = double.NaN;
+        // Host-observed graphics packet freshness, not a game source timestamp
+        // or proof of synchronization with a separate physics memory page.
+        public double DistanceObservationAgeSeconds = double.NaN;
+        public double DistanceObservationIntervalSeconds = double.NaN;
         public double LapDistance = double.NaN;
         // LMU SDK: lateral position relative to a very approximate center path.
         public double PathLateralM = double.NaN;

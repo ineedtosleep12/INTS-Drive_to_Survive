@@ -140,7 +140,7 @@ namespace IntsLiveCoach
             string instruction;
             switch (game.SelectedIndex)
             {
-                case 1: instruction = "ACC: 차량에 탑승하면 연결 · 다른 AC 계열 게임은 함께 실행하지 마세요.\n코스 길이 정보가 없으면 거리별 이전 랩 비교는 제공하지 않습니다."; break;
+                case 1: instruction = "ACC: 차량에 탑승하면 연결 · 기존 Broadcasting 설정으로 코스 길이를 확인합니다.\n공식 코스 길이 수신 후 유효 완주 랩의 제동 위치·주행선을 비교할 수 있습니다."; break;
                 case 2: instruction = "AMS2: Options → System → Shared Memory: Project CARS 2\n레이싱: 출발선을 통과한 뒤 완전한 유효 랩을 마치면 다음 랩과 비교합니다."; break;
                 case 3: instruction = "AC: 차량에 탑승하면 연결 · 드리프트 연습을 위에서 선택하세요.\n랩 유효성이 확인되지 않으면 이전 랩을 기준 기록으로 채택하지 않습니다."; break;
                 case 4: instruction = "EA WRC: wrc / session_update UDP를 127.0.0.1:20777로 설정\n동봉 README의 설정 절차 참고 · 스테이지·차량 자동 식별/랩 비교는 미지원"; break;

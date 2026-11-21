@@ -24,7 +24,7 @@ namespace IntsLiveCoach
     }
     public sealed class ComparisonResult
     {
-        public bool Comparable,HasLineComparison,HasLateralComparison;
+        public bool Comparable,HasLineComparison,HasLateralComparison,HasTimeComparison;
         public string Reason="비교 데이터가 없습니다.";
         public string[] Warnings=new string[0];
         public double LapDeltaSeconds=double.NaN;
@@ -61,11 +61,11 @@ namespace IntsLiveCoach
         {return (Same(a,first)&&Same(b,second))||(Same(a,second)&&Same(b,first));}
         static bool MetreLateral(string basis)
         {return Same(basis,ReferenceLap.LmuLateralBasis)||Same(basis,ReferenceLap.LmuMotecLateralBasis)||Same(basis,"synthetic-path-lateral-m");}
-        static bool LmuMappingExtent(ReferenceLap reference,ReferenceLap own)
+        static bool LmuMappingExtent(ReferenceLap reference,ReferenceLap own,string nativeBasis=ReferenceLap.LmuDistanceBasis)
         {
             if(Finite(reference.TrackLengthM)&&Finite(own.TrackLengthM))
                 return Math.Abs(reference.TrackLengthM-own.TrackLengthM)<=Math.Max(5,reference.TrackLengthM*.001);
-            var native=Same(reference.DistanceBasis,ReferenceLap.LmuDistanceBasis)?reference:own;
+            var native=Same(reference.DistanceBasis,nativeBasis)?reference:own;
             var motec=native==reference?own:reference;
             if(!Finite(native.TrackLengthM)||Finite(motec.TrackLengthM)||motec.Complete)return false;
             double first=motec.Samples[0].DistanceM,last=motec.Samples.Last().DistanceM;
@@ -86,8 +86,14 @@ namespace IntsLiveCoach
             if(!Known(reference.Layout)||!Known(own.Layout))warnings.Add("레이아웃 정보가 미확인입니다. 같은 코스 변형인지 확인하세요.");
             bool lmuMotecPair=Same(reference.Game,"LMU")&&Pair(reference.DistanceBasis,own.DistanceBasis,ReferenceLap.LmuDistanceBasis,ReferenceLap.LmuMotecDistanceBasis);
             bool mappedLmuMotec=allowLmuMotecAlignment&&lmuMotecPair&&LmuMappingExtent(reference,own);
-            if((!Same(reference.DistanceBasis,own.DistanceBasis)||!CourseDistance(reference.DistanceBasis))&&!mappedLmuMotec)
-            {output.Reason=lmuMotecPair?"MoTeC와 공유 메모리의 거리 채널 매핑은 미검증입니다. 트랙 길이가 일치하거나 MoTeC 구간이 공유 메모리 코스의 98% 이상을 포함하는 경우에만 탐색 비교를 명시적으로 선택할 수 있습니다.":"공통 코스 거리 기준이 없습니다. 주행한 누적 거리를 코스 위치로 간주하지 않습니다.";return output;}
+            bool accReplayPair=Same(reference.Game,"ACC")&&Pair(reference.DistanceBasis,own.DistanceBasis,CapturedLap.AccDistanceBasis,AccReplayAlignment.SourceDistanceBasis);
+            bool mappedAccReplay=allowLmuMotecAlignment&&accReplayPair&&LmuMappingExtent(reference,own,CapturedLap.AccDistanceBasis);
+            bool sameReplay=Same(reference.Game,"ACC")&&Same(reference.DistanceBasis,AccReplayAlignment.SourceDistanceBasis)&&Same(reference.DistanceBasis,own.DistanceBasis);
+            if((!Same(reference.DistanceBasis,own.DistanceBasis)||!CourseDistance(reference.DistanceBasis))&&!mappedLmuMotec&&!mappedAccReplay&&!sameReplay)
+            {output.Reason=accReplayPair?"ACCReplay 거리와 실시간 위치의 대응은 미검증입니다. 코스 98% 이상 범위를 확인한 뒤 탐색 정렬을 선택하세요.":lmuMotecPair?"MoTeC와 공유 메모리의 거리 채널 매핑은 미검증입니다. 트랙 길이가 일치하거나 MoTeC 구간이 공유 메모리 코스의 98% 이상을 포함하는 경우에만 탐색 비교를 명시적으로 선택할 수 있습니다.":"공통 코스 거리 기준이 없습니다. 주행한 누적 거리를 코스 위치로 간주하지 않습니다.";return output;}
+            if(mappedAccReplay)warnings.Add("ACCReplay spline 거리와 실시간 코스 위치는 탐색 정렬입니다. 좌표는 별도의 전체 랩 대응 확인 전까지 비교하지 않습니다. 정확한 미터 교정값이 아닙니다.");
+            bool hasTime=reference.HasTime&&own.HasTime;
+            if(!hasTime)warnings.Add("기준 표본 시각 미제공: 위치·속도·입력만 비교하며 초 단위 손실은 계산하지 않습니다.");
             if(mappedLmuMotec)warnings.Add("MoTeC와 공유 메모리 거리·횡위치 채널의 매핑은 실제 주행 검증 전입니다. 탐색 비교이며 제동 위치·시간 손실·횡위치 차이를 검증된 운전 교정값으로 사용할 수 없습니다.");
             if(mappedLmuMotec&&(!Finite(reference.TrackLengthM)||!Finite(own.TrackLengthM)))warnings.Add("MoTeC 원본의 전체 트랙 길이는 미확인입니다. 기록된 구간 범위만 확인한 탐색 비교이며 전체 랩 시간 차이는 제공하지 않습니다.");
             if(Finite(reference.TrackLengthM)&&Finite(own.TrackLengthM)&&Math.Abs(reference.TrackLengthM-own.TrackLengthM)>Math.Max(5,reference.TrackLengthM*.001))
@@ -144,7 +150,7 @@ namespace IntsLiveCoach
                 sections.Add(new ComparisonSection {Name=Metres(start)+"–"+Metres(end)+" m",StartDistanceM=start,EndDistanceM=end,
                     TimeLossSeconds=b.DeltaSeconds-a.DeltaSeconds,ExitSpeedDeltaKph=b.SpeedDeltaKph,MeanLineOffsetM=offsets.Length>0?offsets.Average():double.NaN});
             }
-            output.Comparable=true;output.Reason="같은 코스 위치에서 기록된 입력·시간을 비교합니다. +시간은 내 주행이 더 오래 걸렸다는 뜻입니다.";
+            output.Comparable=true;output.HasTimeComparison=hasTime;output.Reason=hasTime?"같은 코스 위치에서 기록된 입력·시간을 비교합니다. +시간은 내 주행이 더 오래 걸렸다는 뜻입니다.":"코스 위치별 입력·속도를 비교합니다. 표본 시각이 없어 시간 손실은 제공하지 않습니다.";
             output.Points=points.ToArray();output.Sections=sections.OrderByDescending(s=>s.TimeLossSeconds).ToArray();output.HasLineComparison=line;output.HasLateralComparison=lateral;
             output.BrakeZones=CompareBrakes(reference,own,from,to);output.Warnings=warnings.Distinct().ToArray();
             // Do not extrapolate an unrecorded finish/start, even for a declared complete lap.
@@ -192,16 +198,16 @@ namespace IntsLiveCoach
             for(int i=0;i<lap.Samples.Length;i++)
             {
                 var s=lap.Samples[i];
-                if(!Finite(s.Brake)||(i>0&&s.Time-lap.Samples[i-1].Time>1)){active=null;candidate=release=-1;continue;}
+                if(!Finite(s.Brake)||(i>0&&(s.Time-lap.Samples[i-1].Time>1||s.DistanceM-lap.Samples[i-1].DistanceM>100))){active=null;candidate=release=-1;continue;}
                 if(active==null)
                 {
-                    if(s.Brake>=.15){if(candidate<0)candidate=i;if(s.Time-lap.Samples[candidate].Time>=.1){active=new BrakeEvent {Start=lap.Samples[candidate].DistanceM,Uncertainty=PositionResolution(lap,candidate)};release=-1;}}
+                    if(s.Brake>=.15){if(candidate<0)candidate=i;if(lap.HasTime?s.Time-lap.Samples[candidate].Time>=.1:(i>candidate&&s.DistanceM-lap.Samples[candidate].DistanceM>=5)){active=new BrakeEvent {Start=lap.Samples[candidate].DistanceM,Uncertainty=PositionResolution(lap,candidate)};release=-1;}}
                     else candidate=-1;
                 }
                 else if(s.Brake<=.08)
                 {
                     if(release<0)release=i;
-                    if(s.Time-lap.Samples[release].Time>=.15)
+                    if(lap.HasTime?s.Time-lap.Samples[release].Time>=.15:(i>release&&s.DistanceM-lap.Samples[release].DistanceM>=5))
                     {active.Release=lap.Samples[release].DistanceM;active.Uncertainty=Math.Max(active.Uncertainty,PositionResolution(lap,release));events.Add(active);active=null;candidate=release=-1;}
                 }
                 else release=-1;
